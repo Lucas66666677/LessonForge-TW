@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <title>{{ package.title }}</title>
+  <style>
+    @page { size: A4; margin: 16mm 14mm 18mm; @bottom-center { content: "第 " counter(page) " 頁"; font-size: 9pt; color: #64748b; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #17231f; font: 10.5pt/1.65 "Noto Sans CJK TC", "Microsoft JhengHei", sans-serif; }
+    header { border-bottom: 2px solid #1f6b5c; padding-bottom: 10px; margin-bottom: 18px; }
+    h1 { color: #174f45; font-size: 22pt; line-height: 1.25; margin: 0 0 5px; }
+    h2 { color: #174f45; font-size: 15pt; margin: 0 0 8px; }
+    h3 { color: #263f38; font-size: 12pt; margin: 14px 0 5px; }
+    .meta { color: #52645e; display: flex; gap: 12px; flex-wrap: wrap; }
+    .block, .day, .report-item { break-inside: avoid; margin: 0 0 18px; padding: 14px; border: 1px solid #d9e3df; border-radius: 8px; }
+    .duration { float: right; color: #64748b; font-size: 9pt; font-weight: 500; }
+    .question { margin: 10px 0 14px; break-inside: avoid; }
+    .options { margin: 6px 0; padding-left: 24px; }
+    .answer-space { height: 24px; margin-top: 8px; border-bottom: 1px solid #98aaa4; }
+    .teacher { background: #eef7f4; border-left: 4px solid #1f6b5c; padding: 8px 10px; margin-top: 8px; }
+    .source { color: #52645e; font-size: 9pt; background: #f7faf9; padding: 8px; }
+    .page-break { break-before: page; }
+    .score-line { font-weight: 700; margin-bottom: 12px; }
+    ul { margin: 5px 0; }
+    .muted { color: #64748b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{ package.title }}</h1>
+    <div class="meta"><span>{{ organization_name }}</span><span>{{ class_name }}</span><span>{{ package.lesson_date }}</span></div>
+  </header>
+
+  {% if variant in ["student", "teacher"] %}
+    {% for block in package.blocks %}
+      <section class="block">
+        <span class="duration">{{ block.duration_minutes }} 分鐘</span>
+        <h2>{{ block.title }}</h2>
+        {% if block.student_content %}<p>{{ block.student_content }}</p>{% endif %}
+        {% if block.instructions %}<p class="muted">{{ block.instructions }}</p>{% endif %}
+        {% for question in block.questions %}
+          <div class="question">
+            <strong>{{ loop.index }}. {{ question.prompt }}</strong>
+            {% if question.options %}
+              <ol class="options" type="A">{% for option in question.options %}<li>{{ option }}</li>{% endfor %}</ol>
+            {% endif %}
+            {% if show_answers %}
+              <div class="teacher"><strong>答案：{{ question.answer }}</strong><br>解析：{{ question.explanation }}</div>
+            {% else %}<div class="answer-space" aria-label="作答空間"></div>{% endif %}
+          </div>
+        {% endfor %}
+        {% if show_answers %}
+          <div class="teacher">教師備註：{{ block.teacher_notes }}</div>
+          {% if block.source_references %}<div class="source">來源：{% for ref in block.source_references %}{{ ref.material_name }}（{% if ref.page_number %}第 {{ ref.page_number }} 頁{% else %}段落 {{ ref.paragraph_number }}{% endif %}）{% if not loop.last %}；{% endif %}{% endfor %}</div>{% endif %}
+        {% endif %}
+      </section>
+    {% endfor %}
+  {% elif variant == "homework" %}
+    {% for day in package.homework_days %}
+      <section class="day{% if loop.index == 3 %} page-break{% endif %}"><h2>{{ day.title }}</h2><p>預估 {{ day.estimated_minutes }} 分鐘｜單字：{{ day.vocabulary|join('、') }}</p>
+      {% for question in day.questions %}<div class="question"><strong>{{ loop.index }}. {{ question.prompt }}</strong><div class="answer-space"></div></div>{% endfor %}
+      <p class="muted">{{ day.review_note }}</p></section>
+    {% endfor %}
+    <section class="page-break"><h1>作業完整答案</h1>{% for day in package.homework_days %}<h2>Day {{ day.day }}</h2>{% for question in day.questions %}<p>{{ loop.index }}. {{ question.answer }}｜{{ question.explanation }}</p>{% endfor %}{% endfor %}</section>
+  {% elif variant == "quiz" and package.weekly_quiz %}
+    <p class="score-line">總分 {{ package.weekly_quiz.total_points }} 分｜建議作答時間 {{ package.weekly_quiz.suggested_minutes }} 分鐘</p>
+    {% for question in package.weekly_quiz.questions %}<div class="question"><strong>{{ loop.index }}. {{ question.prompt }}（{{ question.points }} 分）</strong>{% if question.options %}<ol type="A">{% for option in question.options %}<li>{{ option }}</li>{% endfor %}</ol>{% endif %}<div class="answer-space"></div></div>{% endfor %}
+    <section class="page-break"><h1>週考答案卷</h1>{% for question in package.weekly_quiz.questions %}<p>{{ loop.index }}. {{ question.answer }}｜{{ question.explanation }}</p>{% endfor %}</section>
+  {% elif variant == "parent" and package.parent_report %}
+    {% set report = package.parent_report %}
+    {% for label, value in [("作業完成情況", report.homework_completion), ("本週測驗表現", report.quiz_performance), ("本週進步", report.progress), ("主要弱點", report.main_weaknesses|join('、')), ("下週教學重點", report.next_week_focus|join('、')), ("教師備註", report.teacher_notes)] %}<section class="report-item"><h2>{{ label }}</h2><p>{{ value }}</p></section>{% endfor %}
+  {% endif %}
+</body>
+</html>

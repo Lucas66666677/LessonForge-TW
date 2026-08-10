@@ -1,0 +1,53 @@
+# LessonForge TW 狀態
+
+更新日期：2026-08-08
+
+## 目前階段
+
+M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 的交付與 Demo 標準；沒有會阻止核心流程的 TODO、假按鈕或未實作 API。
+
+## 已完成
+
+- 繁體中文 React 產品 UI：登入、工作台、班級、學生、教材、生成精靈、進度、教材包、編輯器、預覽、匯出、成員與設定。
+- FastAPI、Pydantic、SQLAlchemy、Alembic、JWT/Argon2、Owner/Admin/Teacher 權限與 audit log。
+- 所有 tenant-owned 查詢顯式帶入 `organization_id`；跨租戶讀取、修改、生成與下載測試通過。
+- PDF／DOCX／TXT／MD 安全上傳、解析、chunk、metadata、全文 fallback 與 PostgreSQL/pgvector 路徑。
+- Mock、Ollama、OpenAI-compatible、Gemini Provider；分階段背景生成、schema repair、驗證、重試與 generation audit metrics。
+- 結構化區塊編輯、排序、複製、刪除、鎖定、局部重生、版本還原、送審與核准。
+- 五種用途的 PDF／DOCX；學生版答案隔離與教師版答案／解析驗證。
+- CI、24-case eval、單元／整合／E2E／a11y、桌面與平板視覺 QA、文件與 Demo script。
+
+## 最終驗證結果
+
+| 驗證 | 結果 |
+|---|---|
+| `npm ci` | 通過 |
+| `npm run lint` | 通過 |
+| `npm run typecheck` | 通過 |
+| `npm run test:unit` | 4 files、6 tests 通過 |
+| `npm run build` | 通過 |
+| `python -m ruff check services` | 通過 |
+| `python -m mypy services/api/lessonforge` | 17 source files 通過 |
+| `python -m pytest` | 16 tests 通過；1 個非阻擋 deprecation warning |
+| `python evals/run_eval.py` | 24 cases 通過 |
+| `npm run e2e` | Chromium 2 tests 通過 |
+| Fresh SQLite migration + seed | 通過 |
+| `python scripts/demo_check.py` | PASS |
+| `pip-audit --local` | 第三方套件無已知漏洞 |
+
+完整數字與風險說明見 `docs/TEST_REPORT.md`。
+
+## 環境限制與已知風險
+
+- 此機器沒有 Docker、Ollama 與 GNU Make；因此 Compose live topology 與 Ollama live generation 尚未在本機實跑，README 提供可直接執行的命令。
+- `npm audit` 剩餘 Vinext 間接依賴 `image-size` 的 2 個 high findings；強制修復會降到不相容 Vinext。上傳白名單不接受受影響影像格式，風險限於 build-time asset parser，持續追蹤上游。
+- 此工作區早期開發用 SQLite 曾在沒有 Alembic version 的狀態下建表；未刪除該既有資料。最終 fresh-clone rehearsal 使用全新隔離 SQLite，migration 與 seed 均通過。
+- DOCX 視覺 QA 因沒有 LibreOffice，改用 Microsoft Word COM 轉 PDF 後逐頁檢查，差異已如實記錄。
+
+## 商用化下一步
+
+1. 在實際部署環境啟動 PostgreSQL/pgvector、Redis、worker 與持久化物件儲存，做備份還原演練。
+2. 安裝 Ollama，使用目標硬體與教材跑 live eval，建立 latency、品質與模型升級基準。
+3. 導入 ingress/WAF 分散式 rate limit、惡意檔案掃描、監控、告警、TLS 與秘密管理。
+4. 完成機構資料處理條款、教材授權、學生資料最小化、保留期與稽核政策。
+5. 追蹤 Vinext/image-size 修補版並在相容後升級，加入 SBOM 與持續供應鏈掃描。
