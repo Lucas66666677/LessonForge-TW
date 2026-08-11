@@ -6,4 +6,4 @@ COPY pyproject.toml ./
 COPY services ./services
 RUN pip install --no-cache-dir .
 COPY . .
-CMD ["sh", "-c", "python -m alembic -c services/api/alembic.ini upgrade head && uvicorn lessonforge.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "python -m alembic -c services/api/alembic.ini upgrade head && python scripts/seed.py && uvicorn lessonforge.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     demo_teacher_email: str = "teacher@demo.lessonforge.tw"
     demo_teacher_password: str = "LessonForgeDemo!2026"
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return value
+
     @field_validator("jwt_secret")
     @classmethod
     def validate_secret(cls, value: str) -> str:

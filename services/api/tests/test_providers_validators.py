@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from lessonforge.config import get_settings
+from lessonforge.config import Settings, get_settings
 from lessonforge.providers import (
     LLMProvider,
     MockLLMProvider,
@@ -15,6 +15,15 @@ from lessonforge.providers import (
 )
 from lessonforge.schemas import LessonBlock, LessonPackageDraft, Question, SourceReference
 from lessonforge.validators import validate_lesson_draft, validate_locked_blocks
+
+
+def test_render_postgres_url_uses_asyncpg_driver() -> None:
+    settings = Settings(
+        database_url="postgresql://lessonforge:secret@db.internal/lessonforge",
+    )
+    assert settings.database_url == (
+        "postgresql+asyncpg://lessonforge:secret@db.internal/lessonforge"
+    )
 
 
 class TinySchema(BaseModel):

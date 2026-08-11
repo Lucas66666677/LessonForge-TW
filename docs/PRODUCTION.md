@@ -1,5 +1,15 @@
 # 正式部署指南
 
+## 線上 Demo 拓樸
+
+Repository 內的 `render.yaml` 會建立 Singapore 區域的 Render Web Service 與
+PostgreSQL，API 容器啟動時自動執行 migration 與冪等 Demo seed。前端部署於
+Sites，瀏覽器只呼叫同網域 `/api/*`，由 Worker 透過託管的 `API_BASE_URL`
+代理至 FastAPI，因此後端位址與 CORS 不會寫死在前端 bundle。
+
+免費 Render Web Service 閒置後會休眠，首次請求可能需要約一分鐘喚醒；免費
+PostgreSQL 會在建立 30 天後到期，僅適合公開 Demo，不是商用正式環境。
+
 本文件描述最低可接受的 production shape。根目錄 Compose 適合單機驗收與內部部署起點，不等同完整高可用平台。
 
 ## 必要拓樸
