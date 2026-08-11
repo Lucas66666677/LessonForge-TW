@@ -4,7 +4,7 @@
 
 ## 目前階段
 
-M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與私有線上 Demo 的交付標準；沒有會阻止核心流程的 TODO、假按鈕或未實作 API。
+M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與公開線上 Demo 的交付標準；沒有會阻止核心流程的 TODO、假按鈕或未實作 API。
 
 ## 已完成
 
@@ -37,7 +37,7 @@ M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與私有線上 Demo
 | Render PostgreSQL + pgvector migration + seed | 通過；API revision `e9cb829` 為 Live |
 | 線上 `/health` | `200 OK`，服務狀態 `ok` |
 | 線上 Demo Owner 登入 + 班級查詢 | 通過；`owner` 角色、1 個 Demo 班級 |
-| OpenAI Sites 私有正式部署 | version 2 發佈成功，已連接 Render API |
+| OpenAI Sites 公開正式部署 | version 2 發佈成功，已連接 Render API |
 
 完整數字與風險說明見 `docs/TEST_REPORT.md`。
 
@@ -49,7 +49,7 @@ M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與私有線上 Demo
 - DOCX 視覺 QA 因沒有 LibreOffice，改用 Microsoft Word COM 轉 PDF 後逐頁檢查，差異已如實記錄。
 - 線上 Demo 使用 Render Free：閒置 15 分鐘後 API 會休眠，冷啟動可能超過 50 秒；免費 PostgreSQL 容量 1 GB、30 天到期且沒有備份。
 - Render Free 的本機檔案系統為暫時性儲存；重啟後上傳原檔與匯出檔可能消失。線上 Demo 使用 Mock Provider，不會產生付費模型費用。
-- OpenAI Sites 目前採 owner-only 私有存取，尚未公開給匿名訪客；正式商用前需完成外部存取政策與正式基礎設施。
+- OpenAI Sites 已開放匿名訪客使用 Demo；正式商用前仍需完成外部存取政策、濫用防護與正式基礎設施。
 
 ## 商用化下一步
 
