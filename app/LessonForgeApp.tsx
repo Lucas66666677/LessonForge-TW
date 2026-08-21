@@ -5,7 +5,14 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -16,16 +23,73 @@ import {
 import { Shell } from "./components/Shell";
 import { ErrorState, LoadingState } from "./components/ui";
 import { api } from "./lib/api";
-import { ClassesPage, ClassDetailPage } from "./pages/ClassesPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { ExportsPage } from "./pages/ExportsPage";
-import { GeneratePage, GenerationProgressPage } from "./pages/GeneratePage";
 import { LoginPage } from "./pages/LoginPage";
-import { MaterialDetailPage, MaterialsPage } from "./pages/MaterialsPage";
-import { MembersPage } from "./pages/MembersPage";
-import { EditorPage, PackagesPage } from "./pages/PackagesPage";
-import { PreviewPage } from "./pages/PreviewPage";
-import { SettingsPage } from "./pages/SettingsPage";
+
+const DashboardPage = lazy(() =>
+  import("./pages/DashboardPage").then((module) => ({
+    default: module.DashboardPage,
+  })),
+);
+const ClassesPage = lazy(() =>
+  import("./pages/ClassesPage").then((module) => ({
+    default: module.ClassesPage,
+  })),
+);
+const ClassDetailPage = lazy(() =>
+  import("./pages/ClassesPage").then((module) => ({
+    default: module.ClassDetailPage,
+  })),
+);
+const MaterialsPage = lazy(() =>
+  import("./pages/MaterialsPage").then((module) => ({
+    default: module.MaterialsPage,
+  })),
+);
+const MaterialDetailPage = lazy(() =>
+  import("./pages/MaterialsPage").then((module) => ({
+    default: module.MaterialDetailPage,
+  })),
+);
+const GeneratePage = lazy(() =>
+  import("./pages/GeneratePage").then((module) => ({
+    default: module.GeneratePage,
+  })),
+);
+const GenerationProgressPage = lazy(() =>
+  import("./pages/GeneratePage").then((module) => ({
+    default: module.GenerationProgressPage,
+  })),
+);
+const PackagesPage = lazy(() =>
+  import("./pages/PackagesPage").then((module) => ({
+    default: module.PackagesPage,
+  })),
+);
+const EditorPage = lazy(() =>
+  import("./pages/PackagesPage").then((module) => ({
+    default: module.EditorPage,
+  })),
+);
+const PreviewPage = lazy(() =>
+  import("./pages/PreviewPage").then((module) => ({
+    default: module.PreviewPage,
+  })),
+);
+const ExportsPage = lazy(() =>
+  import("./pages/ExportsPage").then((module) => ({
+    default: module.ExportsPage,
+  })),
+);
+const MembersPage = lazy(() =>
+  import("./pages/MembersPage").then((module) => ({
+    default: module.MembersPage,
+  })),
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
 
 const subscribeToClientRuntime = () => () => undefined;
 const getClientSnapshot = () => true;
@@ -74,43 +138,45 @@ function AuthenticatedApp({
     );
   return (
     <Shell user={user.data} onLogout={logout}>
-      <Routes>
-        <Route path="/" element={<DashboardPage token={token} />} />
-        <Route path="/classes" element={<ClassesPage token={token} />} />
-        <Route
-          path="/classes/:id"
-          element={<ClassDetailPage token={token} />}
-        />
-        <Route path="/materials" element={<MaterialsPage token={token} />} />
-        <Route
-          path="/materials/:id"
-          element={<MaterialDetailPage token={token} />}
-        />
-        <Route path="/generate" element={<GeneratePage token={token} />} />
-        <Route
-          path="/generation/:id"
-          element={<GenerationProgressPage token={token} />}
-        />
-        <Route path="/packages" element={<PackagesPage token={token} />} />
-        <Route path="/packages/:id" element={<EditorPage token={token} />} />
-        <Route
-          path="/packages/:id/preview"
-          element={<PreviewPage token={token} />}
-        />
-        <Route path="/exports" element={<ExportsPage token={token} />} />
-        <Route
-          path="/members"
-          element={
-            <MembersPage
-              token={token}
-              currentUser={user.data}
-              onTokenChange={onTokenChange}
-            />
-          }
-        />
-        <Route path="/settings" element={<SettingsPage token={token} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<LoadingState label="載入工作區…" />}>
+        <Routes>
+          <Route path="/" element={<DashboardPage token={token} />} />
+          <Route path="/classes" element={<ClassesPage token={token} />} />
+          <Route
+            path="/classes/:id"
+            element={<ClassDetailPage token={token} />}
+          />
+          <Route path="/materials" element={<MaterialsPage token={token} />} />
+          <Route
+            path="/materials/:id"
+            element={<MaterialDetailPage token={token} />}
+          />
+          <Route path="/generate" element={<GeneratePage token={token} />} />
+          <Route
+            path="/generation/:id"
+            element={<GenerationProgressPage token={token} />}
+          />
+          <Route path="/packages" element={<PackagesPage token={token} />} />
+          <Route path="/packages/:id" element={<EditorPage token={token} />} />
+          <Route
+            path="/packages/:id/preview"
+            element={<PreviewPage token={token} />}
+          />
+          <Route path="/exports" element={<ExportsPage token={token} />} />
+          <Route
+            path="/members"
+            element={
+              <MembersPage
+                token={token}
+                currentUser={user.data}
+                onTokenChange={onTokenChange}
+              />
+            }
+          />
+          <Route path="/settings" element={<SettingsPage token={token} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </Shell>
   );
 }

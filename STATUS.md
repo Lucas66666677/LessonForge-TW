@@ -1,6 +1,14 @@
 # LessonForge TW 狀態
 
-更新日期：2026-08-11
+更新日期：2026-08-21
+
+## 2026-08-21 Lucirel release candidate
+
+- 導入 Lucirel Wave Gate v1.0 與公司共用的暖白、深墨、藍／青色視覺語言；登入頁、側欄與主要工作區已完成桌面及 390px 行動版檢查。
+- 受保護路由改為按功能載入；登入與伺服器端使用者驗證仍是進入工作區前的必要安全閘門。
+- Vinext 升級至已修補 `image-size` DoS 的 `1.0.0-beta.8`；隔離 Node 與 Python 環境的供應鏈稽核均為零已知漏洞。
+- 本機驗證：lint、typecheck、build、5 files／7 unit tests、17 backend tests、24-case eval、2 個完整 Chromium E2E 與 Demo Check 全數通過。
+- 桌面 1440×900 與行動 390×844 的登入／工作台均無水平溢位及瀏覽器 console error；核心 E2E 同時通過 WCAG A/AA serious/critical 掃描。
 
 ## 目前階段
 
@@ -44,7 +52,7 @@ M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與公開線上 Demo
 ## 環境限制與已知風險
 
 - 此機器沒有 Docker、Ollama 與 GNU Make；因此 Compose live topology 與 Ollama live generation 尚未在本機實跑，README 提供可直接執行的命令。
-- `npm audit` 剩餘 Vinext 間接依賴 `image-size` 的 2 個 high findings；強制修復會降到不相容 Vinext。上傳白名單不接受受影響影像格式，風險限於 build-time asset parser，持續追蹤上游。
+- Vinext／`image-size` 的歷史 high findings 已由 `vinext@1.0.0-beta.8` 解決；`npm audit` 目前為零。
 - 此工作區早期開發用 SQLite 曾在沒有 Alembic version 的狀態下建表；未刪除該既有資料。最終 fresh-clone rehearsal 使用全新隔離 SQLite，migration 與 seed 均通過。
 - DOCX 視覺 QA 因沒有 LibreOffice，改用 Microsoft Word COM 轉 PDF 後逐頁檢查，差異已如實記錄。
 - 線上 Demo 使用 Render Free：閒置 15 分鐘後 API 會休眠，冷啟動可能超過 50 秒；免費 PostgreSQL 容量 1 GB、30 天到期且沒有備份。
@@ -57,4 +65,4 @@ M0–M7 已完成。LessonForge TW 已達到本機 Mock MVP 與公開線上 Demo
 2. 安裝 Ollama，使用目標硬體與教材跑 live eval，建立 latency、品質與模型升級基準。
 3. 導入 ingress/WAF 分散式 rate limit、惡意檔案掃描、監控、告警、TLS 與秘密管理。
 4. 完成機構資料處理條款、教材授權、學生資料最小化、保留期與稽核政策。
-5. 追蹤 Vinext/image-size 修補版並在相容後升級，加入 SBOM 與持續供應鏈掃描。
+5. 加入 SBOM 與持續供應鏈掃描，並持續追蹤 Vinext 穩定版。

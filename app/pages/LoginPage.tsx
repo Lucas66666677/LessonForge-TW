@@ -1,11 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BookCheck, FileOutput, LockKeyhole, Sparkles } from "lucide-react";
+import { BookCheck, FileOutput, LockKeyhole } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { api } from "../lib/api";
 import { Button, Field, Input, Notice } from "../components/ui";
+import { LucirelProductBrand } from "../components/LucirelProductBrand";
 
 const schema = z.object({
   email: z.email("請輸入有效 Email"),
@@ -40,10 +41,7 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
     <main className="login-page">
       <section className="login-story">
         <div className="login-brand">
-          <div className="brand-mark large">
-            <Sparkles />
-          </div>
-          <span>LessonForge TW</span>
+          <LucirelProductBrand large />
         </div>
         <div>
           <span className="eyebrow light">補習班 AI 教材工作台</span>

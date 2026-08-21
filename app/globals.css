@@ -1,20 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #17231f;
-  --muted: #64716d;
-  --line: #dbe3df;
+  --ink: #15171c;
+  --muted: #667085;
+  --line: #d9dde8;
   --paper: #ffffff;
-  --canvas: #f4f6f4;
-  --teal-900: #103f37;
-  --teal-700: #176354;
-  --teal-600: #1f7665;
-  --teal-100: #dff0eb;
-  --navy: #233a55;
+  --canvas: #f7f5ef;
+  --teal-900: #17233c;
+  --teal-700: #1d4ed8;
+  --teal-600: #2563eb;
+  --teal-100: #e8efff;
+  --navy: #0f766e;
   --amber: #b1661c;
   --rose: #ad3d46;
   --green: #287a56;
-  --shadow: 0 12px 30px rgb(19 50 41 / 0.08);
+  --shadow: 0 12px 30px rgb(29 78 216 / 0.09);
   --font-sans:
     "Noto Sans CJK TC", "Noto Sans TC", "Microsoft JhengHei", "PingFang TC",
     system-ui, sans-serif;
@@ -50,7 +50,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 iframe:focus-visible {
-  outline: 3px solid #8bc8bb;
+  outline: 3px solid #60a5fa;
   outline-offset: 2px;
 }
 a {
@@ -233,6 +233,46 @@ label > span:first-child {
   align-items: center;
   gap: 11px;
   padding: 0 8px 26px;
+}
+.lucirel-product-brand {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+.lucirel-brand-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  background-color: #faf8f2;
+  background-position: center;
+  background-size: cover;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 0.16),
+    0 0 0 1px rgb(255 255 255 / 0.16);
+}
+.lucirel-product-brand.large .lucirel-brand-mark {
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+}
+.lucirel-brand-copy {
+  min-width: 0;
+}
+.lucirel-brand-copy strong,
+.lucirel-brand-copy span {
+  display: block;
+}
+.lucirel-brand-copy strong {
+  color: #fff;
+  font-size: 1.08rem;
+  letter-spacing: -0.02em;
+}
+.lucirel-brand-copy span {
+  color: #b8c4d8;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 .brand-mark {
   display: grid;
@@ -1690,7 +1730,9 @@ td > small,
   flex-direction: column;
   justify-content: space-between;
   padding: clamp(36px, 7vw, 90px);
-  background: var(--teal-900);
+  background:
+    radial-gradient(circle at 12% 8%, rgb(37 99 235 / 0.28), transparent 34%),
+    linear-gradient(145deg, #101827, var(--teal-900) 55%, #11283a);
   color: #fff;
 }
 .login-brand {
