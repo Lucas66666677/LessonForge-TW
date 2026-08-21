@@ -2,7 +2,6 @@
 
 import {
   BookOpen,
-  Boxes,
   FileOutput,
   GraduationCap,
   Home,
@@ -18,6 +17,7 @@ import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import type { CurrentUser } from "../lib/api";
 import { clsx } from "clsx";
+import { LucirelProductBrand } from "./LucirelProductBrand";
 
 const nav = [
   { to: "/", label: "儀表板", icon: Home },
@@ -50,13 +50,7 @@ export function Shell({
         aria-label="主選單"
       >
         <div className="brand">
-          <div className="brand-mark">
-            <Boxes />
-          </div>
-          <div>
-            <strong>LessonForge</strong>
-            <span>TW 教材工作台</span>
-          </div>
+          <LucirelProductBrand />
         </div>
         <button
           className="mobile-close"
