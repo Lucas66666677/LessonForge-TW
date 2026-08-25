@@ -238,4 +238,10 @@ async def seed() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(seed())
+    if get_settings().app_env == "production":
+        print(
+            "Skipping demo seed: APP_ENV=production. Demo accounts and demo data "
+            "must never be created in a production environment."
+        )
+    else:
+        asyncio.run(seed())
