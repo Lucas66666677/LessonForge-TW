@@ -37,6 +37,56 @@ def _normalize(url: str) -> str:
     return url
 
 
+ESCAPED_FOREIGN_KEY_SQL = """
+SELECT c.relname  AS table_name,
+       fn.nspname AS referenced_schema,
+       f.relname  AS referenced_table
+FROM pg_constraint con
+JOIN pg_class c      ON c.oid = con.conrelid
+JOIN pg_namespace n  ON n.oid = c.relnamespace
+JOIN pg_class f      ON f.oid = con.confrelid
+JOIN pg_namespace fn ON fn.oid = f.relnamespace
+WHERE con.contype = 'f'
+  AND n.nspname = :schema
+  AND fn.nspname <> :schema
+ORDER BY c.relname
+"""
+
+
+async def assert_destination_is_sane(connection) -> None:
+    """Refuse to run on top of a half-finished earlier attempt.
+
+    An interrupted run can leave tables whose foreign keys were resolved
+    against `public` (another product's schema on this shared project) rather
+    than against our own. Those tables look present to `checkfirst`, so a
+    re-run would quietly build on them and copy rows into a graph that points
+    at data we do not own. Better to stop and say exactly how to reset.
+    """
+    escaped = (
+        await connection.execute(
+            text(ESCAPED_FOREIGN_KEY_SQL), {"schema": DESTINATION_SCHEMA}
+        )
+    ).mappings().all()
+    if not escaped:
+        return
+
+    details = "\n".join(
+        f"  - {row['table_name']} -> "
+        f"{row['referenced_schema']}.{row['referenced_table']}"
+        for row in escaped
+    )
+    raise RuntimeError(
+        f"Schema {DESTINATION_SCHEMA!r} contains tables whose foreign keys point "
+        f"outside it, which means an earlier run was interrupted part-way:\n"
+        f"{details}\n\n"
+        f"Reset the destination and run this again:\n"
+        f"  DROP SCHEMA {DESTINATION_SCHEMA} CASCADE;\n"
+        f"  CREATE SCHEMA {DESTINATION_SCHEMA};\n"
+        f"  GRANT USAGE, CREATE ON SCHEMA {DESTINATION_SCHEMA} "
+        f"TO lessonforge_runtime;"
+    )
+
+
 async def main() -> None:
     old_url = os.environ["OLD_DATABASE_URL"]
     new_url = os.environ["NEW_DATABASE_URL"]
@@ -54,6 +104,7 @@ async def main() -> None:
         # explicit `lessonforge.` prefix. This avoids mistaking a same-named
         # table in another product schema for the migration destination.
         await connection.execute(text("SET LOCAL search_path TO lessonforge, public"))
+        await assert_destination_is_sane(connection)
         await connection.run_sync(
             lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True)
         )
