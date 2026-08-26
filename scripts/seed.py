@@ -30,6 +30,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 async def seed() -> None:
     settings = get_settings()
+    missing_passwords = [
+        name
+        for name, value in (
+            ("DEMO_OWNER_PASSWORD", settings.demo_owner_password),
+            ("DEMO_TEACHER_PASSWORD", settings.demo_teacher_password),
+        )
+        if len(value) < 12
+    ]
+    if missing_passwords:
+        raise RuntimeError(
+            "Set unique local Demo passwords with at least 12 characters before seeding: "
+            + ", ".join(missing_passwords)
+        )
     settings.ensure_directories()
     await create_schema()
     async with SessionLocal() as session:
@@ -233,8 +246,9 @@ async def seed() -> None:
             await session.commit()
 
     print("Seed complete")
-    print(f"Owner: {settings.demo_owner_email} / {settings.demo_owner_password}")
-    print(f"Teacher: {settings.demo_teacher_email} / {settings.demo_teacher_password}")
+    print(f"Owner: {settings.demo_owner_email}")
+    print(f"Teacher: {settings.demo_teacher_email}")
+    print("Passwords were read from the local environment and are not printed.")
 
 
 if __name__ == "__main__":

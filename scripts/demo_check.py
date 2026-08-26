@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import time
 from datetime import UTC, datetime
 from io import BytesIO
@@ -39,6 +40,10 @@ def pdf_text(content: bytes) -> str:
 
 
 def run(base_url: str, output_dir: Path) -> dict[str, Any]:
+    owner_email = os.getenv("DEMO_OWNER_EMAIL", "owner@demo.lessonforge.tw")
+    owner_password = os.getenv("DEMO_OWNER_PASSWORD", "")
+    if not owner_password:
+        raise RuntimeError("DEMO_OWNER_PASSWORD must be set for the local Demo check")
     api = f"{base_url.rstrip('/')}/api"
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -47,8 +52,8 @@ def run(base_url: str, output_dir: Path) -> dict[str, Any]:
             client.post(
                 f"{api}/auth/login",
                 json={
-                    "email": "owner@demo.lessonforge.tw",
-                    "password": "LessonForgeDemo!2026",
+                    "email": owner_email,
+                    "password": owner_password,
                 },
             ),
             200,
@@ -73,7 +78,7 @@ def run(base_url: str, output_dir: Path) -> dict[str, Any]:
                 json={
                     "email": f"teacher-{stamp}@demo.lessonforge.tw",
                     "display_name": "Demo Check 老師",
-                    "password": "DemoCheckTeacher!2026",
+                    "password": secrets.token_urlsafe(24),
                     "role": "teacher",
                 },
             ),

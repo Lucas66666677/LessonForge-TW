@@ -23,8 +23,8 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
   } = useForm<LoginValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      email: "owner@demo.lessonforge.tw",
-      password: "LessonForgeDemo!2026",
+      email: "",
+      password: "",
     },
   });
   const submit = handleSubmit(async (values) => {
@@ -74,9 +74,9 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
       <section className="login-panel" aria-labelledby="login-title">
         <form className="login-card" onSubmit={submit} noValidate>
           <div>
-            <span className="eyebrow">本機 Demo</span>
+            <span className="eyebrow">安全登入</span>
             <h2 id="login-title">登入工作台</h2>
-            <p>帳號已預先填入，無需外部身分服務或付費 API。</p>
+            <p>請使用補習班管理員提供的帳號登入。</p>
           </div>
           {errors.root?.message ? (
             <Notice kind="error">{errors.root.message}</Notice>
@@ -98,12 +98,6 @@ export function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting ? "登入中…" : "進入 LessonForge"}
           </Button>
-          <div className="demo-accounts">
-            <strong>Demo 帳號</strong>
-            <span>Owner：owner@demo.lessonforge.tw</span>
-            <span>Teacher：teacher@demo.lessonforge.tw</span>
-            <span>密碼：LessonForgeDemo!2026</span>
-          </div>
         </form>
       </section>
     </main>
