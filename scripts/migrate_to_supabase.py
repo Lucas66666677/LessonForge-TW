@@ -20,11 +20,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "services", "api"))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
-from lessonforge.database import Base, create_schema  # noqa: E402
 from lessonforge import models  # noqa: E402,F401  (registers all tables on Base.metadata)
+from lessonforge.database import Base  # noqa: E402
+
+DESTINATION_SCHEMA = "lessonforge"
 
 
 def _normalize(url: str) -> str:
@@ -41,12 +43,24 @@ async def main() -> None:
 
     old_engine = create_async_engine(_normalize(old_url))
     new_engine = create_async_engine(_normalize(new_url))
+    destination_engine = new_engine.execution_options(
+        schema_translate_map={None: DESTINATION_SCHEMA}
+    )
 
-    print("Creating tables in destination schema (no-op if they already exist)...")
-    await create_schema(new_engine)
+    print(f"Creating tables in destination schema {DESTINATION_SCHEMA!r}...")
+    async with destination_engine.begin() as connection:
+        # Keep pgvector's unqualified `vector` type resolvable from `public`,
+        # while schema_translate_map renders every application table with an
+        # explicit `lessonforge.` prefix. This avoids mistaking a same-named
+        # table in another product schema for the migration destination.
+        await connection.execute(text("SET LOCAL search_path TO lessonforge, public"))
+        await connection.run_sync(
+            lambda sync_conn: Base.metadata.create_all(sync_conn, checkfirst=True)
+        )
 
     total_copied = 0
-    async with old_engine.connect() as old_conn, new_engine.begin() as new_conn:
+    async with old_engine.connect() as old_conn, destination_engine.begin() as new_conn:
+        await new_conn.execute(text("SET LOCAL search_path TO lessonforge, public"))
         for table in Base.metadata.sorted_tables:
             existing = (await new_conn.execute(select(table).limit(1))).first()
             if existing is not None:
