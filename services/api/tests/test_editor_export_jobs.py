@@ -12,7 +12,7 @@ from sqlalchemy import select
 from lessonforge.config import get_settings
 from lessonforge.database import SessionLocal
 from lessonforge.exports import build_docx, render_html
-from lessonforge.generation import run_generation
+from lessonforge.generation import recover_stuck_runs, run_generation
 from lessonforge.lesson_service import package_view
 from lessonforge.models import GenerationRun
 from lessonforge.schemas import GenerationRequest
@@ -122,6 +122,50 @@ async def test_background_failure_is_persisted_and_retryable(seeded: dict[str, A
         assert saved.attempt_count == 1
         assert saved.failure_reason
         assert saved.duration_ms is not None
+
+
+@pytest.mark.asyncio
+async def test_recover_stuck_runs_fails_and_makes_retryable(seeded: dict[str, Any]) -> None:
+    settings = get_settings()
+    async with SessionLocal() as session:
+        request = GenerationRequest(
+            class_id=seeded["class_a"],
+            material_ids=[seeded["material_a"]],
+            lesson_date=date(2026, 8, 20),
+            objectives=["Test"],
+        )
+        run = GenerationRun(
+            organization_id=seeded["org_a"],
+            class_id=seeded["class_a"],
+            requested_by_id=seeded["owner_a"],
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            prompt_version="v1",
+            input_settings=request.model_dump(mode="json"),
+            status="generating_blocks",
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.id
+
+    recovered = await recover_stuck_runs()
+    assert recovered >= 1
+
+    async with SessionLocal() as session:
+        saved = await session.scalar(select(GenerationRun).where(GenerationRun.id == run_id))
+        assert saved is not None
+        assert saved.status == "failed"
+        assert saved.failure_reason
+
+    # Already-terminal runs must not be touched by a second recovery pass.
+    async with SessionLocal() as session:
+        saved = await session.scalar(select(GenerationRun).where(GenerationRun.id == run_id))
+        saved.failure_reason = "distinct-marker"
+        await session.commit()
+    await recover_stuck_runs()
+    async with SessionLocal() as session:
+        saved = await session.scalar(select(GenerationRun).where(GenerationRun.id == run_id))
+        assert saved.failure_reason == "distinct-marker"
 
 
 @pytest.mark.asyncio

@@ -364,8 +364,32 @@ async def enqueue_generation(run_id: str, settings: Settings | None = None) -> N
         await redis.aclose()
 
 
+async def recover_stuck_runs() -> int:
+    """Fail any run left in a non-terminal state by a worker that restarted mid-job.
+
+    A restart (redeploy, OOM, crash) drops whatever was in the in-memory Redis
+    BRPOP wait or mid-generation; without this, the run's row stays wedged at
+    its last in-progress status forever with no error and no way to retry
+    (the retry endpoint only accepts "failed"/"completed"). Runs left this way
+    become retry-eligible instead of silently disappearing.
+    """
+    async with SessionLocal() as session:
+        stuck = (
+            await session.scalars(
+                select(GenerationRun).where(GenerationRun.status.notin_(["completed", "failed"]))
+            )
+        ).all()
+        for run in stuck:
+            run.status = "failed"
+            run.progress_message = "生成失敗"
+            run.failure_reason = "工作因伺服器重新啟動而中斷，請重試"
+        await session.commit()
+        return len(stuck)
+
+
 async def worker_loop() -> None:
     settings = get_settings()
+    await recover_stuck_runs()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     try:
         while True:
