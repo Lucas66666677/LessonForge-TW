@@ -32,6 +32,7 @@ CI 對 npm critical 漏洞與所有可稽核 Python 漏洞失敗。因上述有�
 - 上傳惡意程式掃描、隔離解析、object storage IAM、加密與保留期。
 - DB/檔案/備份還原演練、監控、告警、incident runbook。
 - 登入失敗鎖定、密碼重設／邀請、MFA 或 SSO；Demo 帳密不得存在 production。
+- 定期 DAST/SAST、dependency update、tenant isolation regression 與 provider data-flow review。
 
 ## 公開 Demo 帳密回歸防護
 
@@ -43,9 +44,11 @@ CI 對 npm critical 漏洞與所有可稽核 Python 漏洞失敗。因上述有�
 - 登入表單重新預填 email／密碼，或瀏覽器端原始碼、production bundle 出現 Demo 帳號位址。
 - `scripts/seed.py` 失去 `APP_ENV=production` 的 seeding 阻擋。
 
+bundle 掃描涵蓋建置輸出中的每一個文字檔，包含 `_headers`、`BUILD_ID` 這類沒有副檔名的
+檔案與 `.svg`；字型與圖片等二進位檔則以內容判斷後略過。
+
 這個檢查只讀 repository 與建置輸出，不需要任何 secret。退役新的憑證時，把字串加進
 `RETIRED_SECRETS`，門檻才會持續涵蓋每一次事件。
-- 定期 DAST/SAST、dependency update、tenant isolation regression 與 provider data-flow review。
 
 ## 不支援的安全假設
 

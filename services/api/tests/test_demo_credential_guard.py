@@ -189,6 +189,35 @@ def test_empty_demo_password_variable_in_bundle_is_allowed(repo: Path) -> None:
     assert failures(repo) == []
 
 
+def test_retired_password_in_extensionless_build_file_is_rejected(repo: Path) -> None:
+    """`_headers` and `BUILD_ID` ship with the bundle and carry no suffix to match on."""
+    (repo / "dist" / "client" / "_headers").write_text(
+        f"/*\n  X-Demo-Password: {RETIRED}\n", encoding="utf-8"
+    )
+    assert any("_headers" in failure for failure in failures(repo))
+
+
+def test_demo_account_address_in_bundled_svg_is_rejected(repo: Path) -> None:
+    """An SVG is text the browser downloads, so a credential in one is a credential shipped."""
+    (repo / "dist" / "client" / "og.svg").write_text(
+        "<svg><!-- owner@demo.lessonforge.tw --></svg>\n", encoding="utf-8"
+    )
+    assert any("og.svg" in failure for failure in failures(repo))
+
+
+def test_binary_build_assets_are_skipped(repo: Path) -> None:
+    """Fonts and images cannot be read as text; scanning them must not fail the build."""
+    (repo / "dist" / "client" / "geist.woff2").write_bytes(b"wOF2" + bytes(2) + RETIRED.encode())
+    (repo / "dist" / "client" / "og.png").write_bytes(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
+    assert failures(repo) == []
+
+
+def test_unsuffixed_binary_build_file_is_skipped(repo: Path) -> None:
+    """A binary with no suffix is detected by content rather than by name."""
+    (repo / "dist" / "client" / "blob").write_bytes(bytes([0, 1, 2]) + b"binary")
+    assert failures(repo) == []
+
+
 def test_missing_build_directory_is_rejected(repo: Path) -> None:
     """A build that never ran must not be mistaken for a build that is clean."""
     assert any(

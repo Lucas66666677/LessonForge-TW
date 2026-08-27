@@ -40,9 +40,35 @@ SHIPPED_SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".css", ".html"
 # Vitest files live beside the components they cover and are never bundled.
 TEST_FILE_PATTERN = re.compile(r"\.(test|spec)\.[jt]sx?$")
 
-# Text formats worth reading inside a build directory. Images and fonts are skipped;
-# everything textual, including source maps, is scanned.
-BUILD_TEXT_SUFFIXES = (".js", ".mjs", ".cjs", ".json", ".html", ".css", ".txt", ".map")
+# Assets the browser downloads that cannot carry a readable credential: fonts, images
+# and other compiled binaries. Everything else under the build directory is treated as
+# text and scanned, including source maps. An allowlist of suffixes was the earlier rule
+# and it silently skipped real published files -- `_headers`, `.assetsignore`, `BUILD_ID`
+# and every `.svg` -- so a credential pasted into any of them would have shipped.
+BUILD_BINARY_SUFFIXES = (
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".eot",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".avif",
+    ".ico",
+    ".mp3",
+    ".mp4",
+    ".webm",
+    ".ogg",
+    ".wav",
+    ".zip",
+    ".gz",
+    ".br",
+    ".pdf",
+    ".wasm",
+)
 
 # This file necessarily spells out the retired credential in order to detect it.
 # It is the only exemption; tests reach the value through RETIRED_SECRETS instead.
@@ -77,10 +103,22 @@ def _iter_shipped_sources(root: Path) -> Iterator[Path]:
             yield path
 
 
+def _is_probably_binary(path: Path) -> bool:
+    """A NUL byte in the first block is the cheap, reliable tell for a binary file."""
+    try:
+        with path.open("rb") as handle:
+            return b"\0" in handle.read(8192)
+    except OSError:
+        return True
+
+
 def _iter_build_files(build_dir: Path) -> Iterator[Path]:
     for path in sorted(build_dir.rglob("*")):
-        if path.is_file() and path.suffix in BUILD_TEXT_SUFFIXES:
-            yield path
+        if not path.is_file() or path.suffix.lower() in BUILD_BINARY_SUFFIXES:
+            continue
+        if _is_probably_binary(path):
+            continue
+        yield path
 
 
 def _iter_tracked_text(root: Path) -> Iterator[Path]:
