@@ -31,6 +31,8 @@ jobs:
           npm run typecheck
           npm run test:unit
           npm run build
+      - name: Public demo credential gate
+        run: python scripts/check_demo_credentials.py --build-dir dist
       - name: Backend quality
         run: |
           python -m ruff check services scripts evals
