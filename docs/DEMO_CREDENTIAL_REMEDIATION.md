@@ -10,7 +10,7 @@ still ships this, verbatim, inside the JavaScript bundle
 Demo 帳號
 Owner：owner@demo.lessonforge.tw
 Teacher：teacher@demo.lessonforge.tw
-密碼：LessonForgeDemo!2026
+密碼：[redacted retired credential — do not reproduce]
 ```
 
 Verified 2026-08-27 by fetching that chunk and grepping it. Of the six chunks
