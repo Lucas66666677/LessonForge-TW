@@ -7,6 +7,13 @@ import { LoginPage } from "./LoginPage";
 describe("LoginPage", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("does not prefill or disclose login credentials", () => {
+    render(<LoginPage onLogin={vi.fn()} />);
+    expect(screen.getByLabelText("Email")).toHaveValue("");
+    expect(screen.getByLabelText("密碼")).toHaveValue("");
+    expect(screen.queryByText("Demo 帳號")).not.toBeInTheDocument();
+  });
+
   it("validates the email before submitting", async () => {
     const user = userEvent.setup();
     render(<LoginPage onLogin={vi.fn()} />);
@@ -18,6 +25,7 @@ describe("LoginPage", () => {
   });
 
   it("returns a token after successful Demo login", async () => {
+    const user = userEvent.setup();
     const onLogin = vi.fn();
     vi.spyOn(api, "login").mockResolvedValue({
       access_token: "demo-token",
@@ -31,6 +39,11 @@ describe("LoginPage", () => {
       },
     });
     render(<LoginPage onLogin={onLogin} />);
+    await user.type(
+      screen.getByLabelText("Email"),
+      "owner@demo.lessonforge.tw",
+    );
+    await user.type(screen.getByLabelText("密碼"), "test-only-password");
     fireEvent.submit(
       screen.getByRole("button", { name: "進入 LessonForge" }).closest("form")!,
     );

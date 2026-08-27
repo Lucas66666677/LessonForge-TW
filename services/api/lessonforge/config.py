@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     in_process_jobs: bool = True
 
     demo_owner_email: str = "owner@demo.lessonforge.tw"
-    demo_owner_password: str = "LessonForgeDemo!2026"
+    demo_owner_password: str = ""
     demo_teacher_email: str = "teacher@demo.lessonforge.tw"
-    demo_teacher_password: str = "LessonForgeDemo!2026"
+    demo_teacher_password: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod

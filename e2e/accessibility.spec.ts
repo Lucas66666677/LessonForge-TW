@@ -17,6 +17,8 @@ test("登入與工作台符合關鍵 WCAG 規則並可用鍵盤跳到主內容",
   await expect(page.getByRole("heading", { name: "登入工作台" })).toBeVisible();
   await expectNoSeriousViolations(page);
 
+  await page.getByLabel("Email").fill("owner@demo.lessonforge.tw");
+  await page.getByLabel("密碼").fill("e2e-owner-password-only");
   await page.getByRole("button", { name: "進入 LessonForge" }).click();
   await expect(
     page.getByRole("heading", { name: "今天要準備哪一堂課？" }),
@@ -27,7 +29,9 @@ test("登入與工作台符合關鍵 WCAG 規則並可用鍵盤跳到主內容",
   await expect(
     page.getByRole("heading", { name: "今天要準備哪一堂課？" }),
   ).toBeVisible();
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
   await page.keyboard.press("Tab");
   const skipLink = page.getByRole("link", { name: "跳到主要內容" });
   await expect(skipLink).toBeFocused();

@@ -10,15 +10,22 @@ test("Mock Provider 完成班級、教材、生成、鎖定、核准與分版匯
 
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "登入工作台" })).toBeVisible();
+  await page.getByLabel("Email").fill("owner@demo.lessonforge.tw");
+  await page.getByLabel("密碼").fill("e2e-owner-password-only");
   await page.getByRole("button", { name: "進入 LessonForge" }).click();
-  await expect(page.getByRole("heading", { name: "今天要準備哪一堂課？" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "今天要準備哪一堂課？" }),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "班級", exact: true }).click();
   await page.getByRole("button", { name: "建立班級" }).click();
   await page.getByLabel("班級名稱").fill(className);
   await page.getByLabel("已學內容").fill("基礎五大句型與過去式");
   await page.getByLabel("常見錯誤").fill("單字拼寫\n閱讀細節定位");
-  await page.getByRole("dialog").getByRole("button", { name: "建立班級" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "建立班級" })
+    .click();
   await expect(page.getByRole("heading", { name: className })).toBeVisible();
 
   await page.getByRole("link", { name: "教材庫" }).click();
@@ -29,19 +36,25 @@ test("Mock Provider 完成班級、教材、生成、鎖定、核准與分版匯
   await page.getByLabel("標籤").fill("e2e,reading,evidence");
   await page.getByRole("button", { name: "上傳並解析" }).click();
   await expect(page.getByRole("status")).toContainText("教材已完成解析");
-  await expect(page.getByRole("link", { name: /demo_material\.md/ })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /demo_material\.md/ }),
+  ).toBeVisible();
 
   await page.getByRole("link", { name: "產生教材" }).click();
   await page.getByLabel("班級").selectOption({ label: `${className} · 國三` });
   await page.getByLabel("選擇教材 demo_material.md").check();
   await page.getByRole("button", { name: /下一步/ }).click();
-  await page.getByLabel("本次學習目標").fill("辨認主張與證據\n運用上下文判斷詞義");
+  await page
+    .getByLabel("本次學習目標")
+    .fill("辨認主張與證據\n運用上下文判斷詞義");
   await page.getByRole("button", { name: /下一步/ }).click();
   await page.getByRole("button", { name: /下一步/ }).click();
   await page.getByRole("button", { name: "開始產生教材" }).click();
-  await expect(page.getByRole("heading", { name: "教材包已產生" })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole("heading", { name: "教材包已產生" })).toBeVisible(
+    {
+      timeout: 30_000,
+    },
+  );
   await page.getByRole("button", { name: /開啟教材編輯器/ }).click();
 
   const blocks = page.locator("article.editor-block");

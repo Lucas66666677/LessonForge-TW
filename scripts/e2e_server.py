@@ -19,6 +19,8 @@ os.environ["LLM_PROVIDER"] = "mock"
 os.environ["LLM_MODEL"] = "mock-lesson-v1"
 os.environ["EMBEDDING_PROVIDER"] = "disabled"
 os.environ["IN_PROCESS_JOBS"] = "true"
+os.environ["DEMO_OWNER_PASSWORD"] = "e2e-owner-password-only"
+os.environ["DEMO_TEACHER_PASSWORD"] = "e2e-teacher-password-only"
 
 import uvicorn  # noqa: E402
 

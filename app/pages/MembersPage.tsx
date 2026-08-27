@@ -160,7 +160,7 @@ export function MembersPage({
         open={open}
         onOpenChange={setOpen}
         title="建立教師帳號"
-        description="此密碼只供本機 Demo；正式環境請要求使用者首次登入後更換。"
+        description="請使用唯一初始密碼並透過安全管道提供，使用者首次登入後應立即更換。"
       >
         <form
           className="modal-form"

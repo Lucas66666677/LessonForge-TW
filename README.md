@@ -8,10 +8,8 @@
 [![介面語言](https://img.shields.io/badge/介面-繁體中文-0f766e)](#產品特色)
 
 > [!TIP]
-> **[開啟線上 Demo](https://lessonforge-tw-lucas.lucas66666677.chatgpt.site)**<br>
-> Owner：`owner@demo.lessonforge.tw`<br>
-> Teacher：`teacher@demo.lessonforge.tw`<br>
-> 密碼：`LessonForgeDemo!2026`
+> **[開啟線上產品預覽](https://lessonforge-tw-lucas.lucas66666677.chatgpt.site)**<br>
+> 為保護資料與管理功能，線上環境不提供公開共用的管理帳密。
 
 線上環境使用不計費的 Mock AI Provider，因此不需要 API key，也不會把 Demo 教材送到外部模型。免費 API 閒置後會休眠，第一次開啟可能需要約 50 秒喚醒。
 
@@ -53,13 +51,13 @@ flowchart LR
     API --> AI["Mock / Ollama /\nOpenAI-compatible / Gemini"]
 ```
 
-| 層級 | 技術 |
-|---|---|
-| Web | React 19、TypeScript strict、Vinext/Vite、TanStack Query、Radix UI |
-| API | FastAPI、Pydantic 2、SQLAlchemy 2 async、Alembic、JWT、Argon2 |
-| 正式資料層 | PostgreSQL 17、pgvector、Redis、背景 worker |
-| 本機 Demo | SQLite、檔案儲存、in-process jobs、Mock Provider |
-| 文件輸出 | Jinja2、Playwright PDF、python-docx DOCX |
+| 層級       | 技術                                                               |
+| ---------- | ------------------------------------------------------------------ |
+| Web        | React 19、TypeScript strict、Vinext/Vite、TanStack Query、Radix UI |
+| API        | FastAPI、Pydantic 2、SQLAlchemy 2 async、Alembic、JWT、Argon2      |
+| 正式資料層 | PostgreSQL 17、pgvector、Redis、背景 worker                        |
+| 本機 Demo  | SQLite、檔案儲存、in-process jobs、Mock Provider                   |
+| 文件輸出   | Jinja2、Playwright PDF、python-docx DOCX                           |
 
 深入說明請看 [架構文件](docs/ARCHITECTURE.md) 與 [API 文件](docs/API.md)。
 
@@ -84,6 +82,7 @@ python -m venv .venv
 npm ci
 .\.venv\Scripts\python.exe -m playwright install chromium
 Copy-Item .env.example .env
+# 在 .env 內為 DEMO_OWNER_PASSWORD 與 DEMO_TEACHER_PASSWORD 設定各自的本機密碼。
 .\.venv\Scripts\python.exe -m alembic -c services/api/alembic.ini upgrade head
 .\.venv\Scripts\python.exe scripts/seed.py
 ```

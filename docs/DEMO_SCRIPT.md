@@ -7,7 +7,7 @@
 1. 依 README 完成 install、migration、seed，啟動 API 與 web。
 2. 確認 `/health` 為 200，設定頁顯示 Mock Provider。
 3. 準備 `fixtures/demo_material.md`。
-4. 登入 `owner@demo.lessonforge.tw`／`LessonForgeDemo!2026`。
+4. 使用 `.env` 中自行設定的 `DEMO_OWNER_EMAIL`／`DEMO_OWNER_PASSWORD` 登入。
 
 ## 走查
 
