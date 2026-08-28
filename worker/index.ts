@@ -2,6 +2,7 @@
 /** Cloudflare Worker entry point for LessonForge TW Sites preview. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { resolveApiUpstream } from "./api-origin";
 
 interface Env {
   ASSETS: Fetcher;
@@ -32,14 +33,15 @@ const worker = {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/")) {
-      const apiBase = env.API_BASE_URL?.replace(/\/$/, "");
-      if (!apiBase) {
+      // A loopback or private-range API_BASE_URL is a configuration regression, not
+      // an upstream to forward the public site to.
+      const upstream = resolveApiUpstream(env.API_BASE_URL, url);
+      if (!upstream) {
         return Response.json(
           { detail: "線上 API 尚未完成設定" },
           { status: 503 },
         );
       }
-      const upstream = new URL(`${url.pathname}${url.search}`, apiBase);
       return fetch(new Request(upstream, request));
     }
 
