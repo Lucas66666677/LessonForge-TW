@@ -30,7 +30,6 @@ from pydantic import ValidationError
 
 from lessonforge.config import PUBLIC_JWT_SECRETS, Settings
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 #: Long enough to satisfy the length rule, and not written down anywhere.

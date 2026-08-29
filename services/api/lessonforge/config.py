@@ -7,7 +7,6 @@ from typing import Literal
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 #: Signing keys that are written down in this repository, and are therefore
 #: public. A process that signs access tokens with one of these is not
 #: authenticating anybody: any reader of the repo can mint a token for any user
@@ -79,7 +78,7 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_production_sign_in(self) -> "Settings":
+    def validate_production_sign_in(self) -> Settings:
         """Refuse to start production on a sign-in path anyone can use.
 
         Nothing here was checked before. `jwt_secret` was validated for length
