@@ -4,8 +4,29 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+#: Signing keys that are written down in this repository, and are therefore
+#: public. A process that signs access tokens with one of these is not
+#: authenticating anybody: any reader of the repo can mint a token for any user
+#: in any tenant, and `verify_token` will accept it. Every one of them is longer
+#: than 32 characters, so the length rule below passes them -- which is exactly
+#: why length is not a sufficient check.
+#:
+#: Append to this tuple whenever another placeholder appears anywhere in the
+#: repo. `test_production_auth_contract.py` re-derives the list from the files
+#: that carry them and fails if one is missing here.
+PUBLIC_JWT_SECRETS: tuple[str, ...] = (
+    # services/api/lessonforge/config.py -- the default below
+    "local-demo-secret-change-before-production-32-chars",
+    # .env.example
+    "change-this-to-at-least-32-random-characters",
+    # scripts/e2e_server.py
+    "e2e-only-secret-change-before-production-32chars",
+    # services/api/tests/conftest.py
+    "pytest-secret-that-is-longer-than-32-characters",
+)
 
 
 class Settings(BaseSettings):
@@ -55,6 +76,43 @@ class Settings(BaseSettings):
         if len(value) < 32:
             raise ValueError("JWT_SECRET 必須至少 32 個字元")
         return value
+
+    @model_validator(mode="after")
+    def validate_production_sign_in(self) -> Settings:
+        """Refuse to start production on a sign-in path anyone can use.
+
+        Nothing here was checked before. `jwt_secret` was validated for length
+        alone, and every placeholder in the repository is long enough to pass,
+        so a production container that never received `JWT_SECRET` would boot
+        on the default above, answer `/health` with `{"status": "ok"}`, and
+        issue access tokens signed with a key published on GitHub.
+
+        The demo passwords are the same failure from the other direction: they
+        default to empty, and `scripts/seed.py` only creates those accounts
+        when they are set. Setting them in production restores a shared
+        credential that no user owns and nobody rotates -- the incident
+        `scripts/check_demo_credentials.py` exists because of. That checker
+        scans the repository; this one covers the environment, which it
+        cannot see.
+
+        Neither message repeats the value it rejected.
+        """
+        if self.app_env != "production":
+            return self
+        if self.jwt_secret in PUBLIC_JWT_SECRETS:
+            raise ValueError(
+                "JWT_SECRET is a placeholder published in this repository, so "
+                "the tokens it signs are forgeable by anyone. Production must "
+                "set a unique secret -- note that leaving JWT_SECRET unset "
+                "selects the development default rather than failing."
+            )
+        if self.demo_owner_password or self.demo_teacher_password:
+            raise ValueError(
+                "DEMO_OWNER_PASSWORD and DEMO_TEACHER_PASSWORD must be empty "
+                "in production: a seeded account with a shared password is a "
+                "sign-in path no user owns and nobody rotates."
+            )
+        return self
 
     @property
     def upload_max_bytes(self) -> int:
