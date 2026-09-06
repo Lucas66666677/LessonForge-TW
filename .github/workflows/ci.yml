@@ -42,5 +42,5 @@ jobs:
         run: python evals/run_eval.py
       - name: Dependency audit
         run: |
-          npm audit --audit-level=critical
+          npm audit --audit-level=high
           python -m pip_audit --local --skip-editable
