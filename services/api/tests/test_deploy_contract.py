@@ -115,3 +115,85 @@ def test_render_healthcheck_is_liveness_not_readiness() -> None:
         f"healthCheckPath {health_path!r} declares injected dependencies "
         "-- a liveness route must not depend on anything that can be down"
     )
+
+
+def _service_env(service: dict[str, Any]) -> dict[str, Any]:
+    """The `key: ...` entries of a service's envVars, indexed by key.
+
+    An entry may carry `value`, or a generator such as `generateValue` /
+    `fromDatabase`. Both count as declared; a key absent from the blueprint is
+    not, and Render never prompts for it on a sync.
+    """
+    entries = service.get("envVars") or []
+    return {
+        str(entry["key"]): entry
+        for entry in entries
+        if isinstance(entry, dict) and "key" in entry
+    }
+
+
+def test_render_service_tracks_main_and_redeploys_on_commit() -> None:
+    """A merged fix has to actually reach the running service.
+
+    Every other rule in this file checks what the deploy *does* once it runs.
+    None of them checks whether a commit triggers one at all. Those two fields
+    are the entire answer to "is the deployed API the code on `main`?", and
+    without them a green merge can leave the service on an old image
+    indefinitely while CI keeps reporting success -- a silent drift that has
+    already cost a sibling product a shipped fix.
+
+    Both are plain configuration, no secret, so neither has a reason to be
+    absent.
+    """
+    service = _web_service()
+
+    assert service.get("branch") == "main", (
+        f"render.yaml pins branch {service.get('branch')!r}; the deploy must track `main`, "
+        "or what reaches production is not answerable from this repository"
+    )
+    assert service.get("autoDeployTrigger") == "commit", (
+        f"render.yaml sets autoDeployTrigger {service.get('autoDeployTrigger')!r}; without "
+        "`commit` a change merged to main may never be built and the service keeps serving "
+        "its previous image while CI reports green"
+    )
+
+
+def test_render_declares_the_generation_provider() -> None:
+    """The blueprint must say which LLM provider the deployment runs.
+
+    `Settings.llm_provider` defaults to `mock`, so a blueprint that omits
+    `LLM_PROVIDER` produces a deployment that quietly generates mock lessons
+    while nothing in the repository records that. Declaring it keeps the
+    deployed provider state reviewable in code -- and reviewable is the point:
+    this deployment currently declares `mock`, which is a real product state,
+    not an accident to be discovered by a user.
+    """
+    environment = _service_env(_web_service())
+
+    assert "LLM_PROVIDER" in environment, (
+        "render.yaml declares no LLM_PROVIDER; Settings.llm_provider then falls back to "
+        "'mock' and the deployment generates mock lessons with nothing in the repository "
+        "saying so"
+    )
+
+
+def test_render_generation_provider_is_one_the_settings_accept() -> None:
+    """A provider the settings reject stops the container at boot.
+
+    `llm_provider` is a `Literal`, so pydantic refuses an unlisted value while
+    `Settings` is being built -- inside `lifespan`, i.e. as a deploy that never
+    turns its health gate green. The accepted values are read off the real
+    field rather than copied, so widening the Literal cannot leave this stale.
+    """
+    from typing import get_args
+
+    from lessonforge.config import Settings
+
+    accepted = set(get_args(Settings.model_fields["llm_provider"].annotation))
+    assert accepted, "could not read the accepted llm_provider values off Settings"
+
+    declared = _service_env(_web_service())["LLM_PROVIDER"].get("value")
+    assert declared in accepted, (
+        f"render.yaml sets LLM_PROVIDER={declared!r}, which Settings.llm_provider does not "
+        f"accept (allowed: {sorted(accepted)}); the container would fail to start"
+    )
