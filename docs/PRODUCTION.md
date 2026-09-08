@@ -46,8 +46,38 @@ LOG_RAW_AI_CONTENT=false
 2. 備份資料庫並先在 staging 執行 `alembic upgrade head`。
 3. 正式 DB 執行 migration；同一時間只允許一個 migration job。
 4. 先更新 worker，再更新 API，最後更新 web；或在不相容 schema 變更時採 expand/migrate/contract。
-5. 驗證 `/health`、登入、tenant 404、Mock 或指定 provider 生成、學生／教師分版匯出。
+5. 先以 `/version` 確認線上跑的是這次要發佈的 commit，再驗證 `/health`、登入、tenant 404、Mock 或指定 provider 生成、學生／教師分版匯出。
 6. 觀察 queue、錯誤率、匯出延遲與磁碟用量後再結束 rollout。
+
+## 確認線上跑的是哪一版
+
+`GET /version` 回報目前 process 由哪一個 commit 建置：
+
+```bash
+curl -fsS https://lessonforge-tw-api-lucas.onrender.com/version
+```
+
+```json
+{ "revision": "33539b0c7a1e4d82f6b95c0e3a7d418be2f0c95d" }
+```
+
+三種回應，各自代表不同的事：
+
+| 回應 | 線上實際部署的版本 |
+| --- | --- |
+| `404` | 比加入此路由的 commit 更舊的 build，代表 merge 尚未真正上線 |
+| `{"revision": null}` | 此 build 或更新，但 `RENDER_GIT_COMMIT` 未設定或不是 commit SHA |
+| `{"revision": "<sha>"}` | 就是該 commit |
+
+與 `git rev-parse origin/main` 比對即可判斷。**部署後請先看這一項**：其餘檢查都是由「當下正在跑的 image」回答的，若跑的是舊 build，全部通過也不構成新版本的證據。
+
+`/health` 的 `version` 欄位不能用來做這件事，且刻意保持原樣。它是 `lessonforge/__init__.py` 內寫死的套件版本 `0.1.0`，每次發佈都相同——看起來像版本識別但其實不是，比沒有更容易誤導：跨版本比對兩次 `/health` 會看到一致，因而誤判部署已生效。該欄位是 Render deploy gate（`render.yaml` 的 `healthCheckPath`）所輪詢的 payload，因此不做修改，改以獨立路由回答這個問題。測試會逐位元組（byte-for-byte）鎖定 `/health` 的回應內容。
+
+`RENDER_GIT_COMMIT` 由 Render 於每次部署自動注入（build 與 runtime 皆有），不需設定，**也不應手動設定**：寫進服務環境變數的固定值會讓 `/version` 永遠回報當初輸入時的 commit，變成一個「有自信但錯誤」的答案，比沒有答案更糟。
+
+此路由與 `/health` 一樣不連資料庫，因此在依賴故障時仍可回應——那正是需要問這個問題的時候；同樣被排除在 rate limiter 之外，因為 rollout 期間反覆輪詢卻開始收到 429 的探針無法作為判斷依據。
+
+路由未經驗證即可存取，因此可公開的內容由 `lessonforge/revision.py` 決定：僅接受錨定的 7–40 位十六進位字元並轉為小寫，其餘一律回 `null`。即使該變數被填入資料庫連線字串、JWT secret 或整行貼上的 `.env`，也只會回報 `null` 而不會回傳其內容；被拒絕的值同樣不寫入 log——拒絕它的理由正是它可能是機密，寫進 log 只是換個地方外洩。
 
 ## 資料保護
 
