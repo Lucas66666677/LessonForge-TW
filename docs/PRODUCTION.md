@@ -79,6 +79,108 @@ curl -fsS https://lessonforge-tw-api-lucas.onrender.com/version
 
 路由未經驗證即可存取，因此可公開的內容由 `lessonforge/revision.py` 決定：僅接受錨定的 7–40 位十六進位字元並轉為小寫，其餘一律回 `null`。即使該變數被填入資料庫連線字串、JWT secret 或整行貼上的 `.env`，也只會回報 `null` 而不會回傳其內容；被拒絕的值同樣不寫入 log——拒絕它的理由正是它可能是機密，寫進 log 只是換個地方外洩。
 
+## 建立第一位管理員（首位擁有者）
+
+正式環境的登入是「先有帳號才能登入」，而在此腳本之前**沒有任何途徑能建立第一個帳號**，形成死結：
+
+* `POST /auth/login` 找到使用者後仍要求 membership，沒有時回 `403 帳號不屬於任何可用組織`——只有 user 資料列無法登入。
+* `POST /organizations` 會一併建立組織與 owner membership，但它需要 `UserDep`，也就是必須先登入。
+* `POST /organizations/current/members` 需要既有的 owner 或 admin。
+* `scripts/seed.py` 在 `APP_ENV=production` 時直接拒絕執行（正確：它建立的是共用密碼的示範帳號）。
+
+`scripts/bootstrap_owner.py` 補上且僅補上這一步：一個 user、一個 organization、一個 owner membership。
+
+### 先確認現況，不要假設
+
+```bash
+python scripts/bootstrap_owner.py --status
+```
+
+「沒有任何程式碼會植入帳號」與「資料庫裡沒有帳號」是**兩件不同的事**。前者可以從 `seed.py` 的防護讀出來；後者是線上資料庫的事實，光讀原始碼永遠無法確定——維運者可能手動插入過資料列，較早的版本也可能在防護加入前就植入過。`--status` 就是用來回答後者，而不是用猜的。
+
+它只回報數量，不輸出 email、顯示名稱或雜湊，因此輸出可以安全貼進 issue：
+
+```text
+users:              0
+organizations:      0
+memberships:        0
+active memberships: 0
+owner memberships:  0
+
+The database holds no accounts. --create will create the first owner.
+```
+
+三個 membership 數字回答的是**三個不同的問題**，任意兩個混為一談都會得出錯誤結論：
+
+* `memberships`——有多少筆把 user 連到組織。
+* `active memberships`——其中有多少筆屬於 `login` 會接受的 user。登入會先檢查 `is_active`，在還沒去找 membership 之前就回 401，所以停用帳號持有再多 membership 也登不進來。
+* `owner memberships`——有多少筆是 owner 角色；這是 `--create` 唯一會據以拒絕的數字。
+
+因此輸出區分五種狀態：
+
+* **沒有任何帳號**——`--create` 會建立第一位擁有者。
+* **有 user 但沒有任何 membership**——這些帳號存在卻無法登入，因為登入需要 membership。
+* **有 active membership 但沒有 owner**——這些人**可以**正常登入。`POST /auth/login` 以 `user_id` join `Membership`，完全不篩選 `role`，因此 teacher 與 owner 一樣能登入；唯一有角色限制的路由 `POST /organizations/current/members` 也接受 admin。此時 `--create` 仍會執行，但它建立的是**另一個**組織，既有組織依然沒有 owner。
+* **有 membership，但持有者全部被停用**——沒有人能登入，原因是停用而不是缺少 owner。此時「把某個帳號重新啟用」通常比新建組織更小、更正確。
+* **已有 owner**——此時 `--create` 會拒絕。
+
+早期版本把「owner 為 0」寫成「沒有人能登入」，那是錯的，並在外部審查中被指出：owner 的數量只說明 owner 這個角色，不說明誰能登入。能不能登入只由 `active memberships` 回答。
+
+回歸測試有兩個，因為那是同一類誤判的兩種大小：
+
+* `test_a_teacher_membership_is_enough_to_sign_in`——在沒有任何 owner 的資料庫中，以 teacher 身分呼叫公開登入路由並取得 token。
+* `test_a_deactivated_member_cannot_sign_in_and_is_not_reported_as_able_to`——membership 存在但持有者已停用時登入回 401，報告也不得宣稱有人能登入。
+
+兩者都經過變異驗證：在 `login` 加上角色篩選、或讓報告改用未過濾的 `memberships`，對應的測試都會失敗。
+
+### 建立
+
+```bash
+BOOTSTRAP_OWNER_PASSWORD='<你自己選的密碼>'   python scripts/bootstrap_owner.py --create     --email owner@your-domain.example     --organization "你的補習班名稱"
+```
+
+密碼只從 `BOOTSTRAP_OWNER_PASSWORD` 讀取；腳本不會產生、不會有預設值、不會印出或寫進 log，資料庫中只留 Argon2 雜湊。若不想讓密碼留在 shell 歷史，可加 `--prompt` 在終端機輸入。
+
+**預設路徑永遠不會停住等待輸入。** 這是刻意的：`getpass` 在部分平台會直接讀主控台，即使把 stdin 導向 `/dev/null` 也不會失敗——開發此腳本時實測就這樣卡住直到被強制結束，且完全沒有輸出。會無聲卡住部署步驟的工具，比直接拒絕更糟，所以互動輸入改為 `--prompt` 明示啟用。
+
+腳本另外會拒絕：本專案曾公開過的密碼（與 `scripts/check_demo_credentials.py` 同一份清單）、少於 12 字元的密碼、已存在 owner membership 時的再次執行、以及 email 已被既有 user 使用的情況。
+
+它**不會**執行 migration，也不會建立上述三筆以外的任何資料。請在 schema 已就緒後再執行。
+
+### 兩個人同時執行
+
+`--create` 先確認沒有 owner，再寫入三筆資料。這兩步之間若有第二次執行做了同樣的確認，兩邊都會得到「沒有 owner」而都寫入——一個宣稱只建立「第一位」的指令，結果產生兩位擁有者與兩個組織。
+
+在 PostgreSQL 上這個空隙由 `pg_advisory_xact_lock` 關閉：鎖在涵蓋「確認」與「寫入」的同一個 transaction 內持有，第二次執行會等待，然後看見第一次建立的 owner 並拒絕。它是 transaction 層級的鎖，commit 即釋放，因此不需要新資料表、不需要 migration，也不會被中斷的執行留下未釋放的鎖。
+
+其他資料庫沒有同等保證，腳本會**直接拒絕**而不是假裝安全：
+
+```text
+Refused: Refusing to bootstrap on a 'sqlite' database. Only one owner may ever be
+created this way, and only PostgreSQL offers a lock that can hold across the check
+and the writes; here two simultaneous runs would both read zero owners and both
+succeed. Run this against the PostgreSQL deployment, or pass --allow-unsynchronized
+if you are certain nothing else is writing.
+```
+
+正式環境使用 PostgreSQL，因此預設路徑即可運作，不需要任何額外參數。只有在確定沒有其他寫入者（例如對本機 SQLite 操作）時，才用 `--allow-unsynchronized` 明示放棄這項保護。
+
+#### 這個保證是怎麼驗證的
+
+SQLite 沒有 advisory lock，所以一般測試只能確認「有送出那道語句」，無法證明「兩個同時執行的結果只會有一位 owner」。CI 另有 `first-owner-concurrency` job，會啟動一個用完即丟的 PostgreSQL 容器，實際跑真正的並行情境：
+
+* 兩個 bootstrap 在 barrier 同時出發，結果必須恰好是一個成功、一個被拒絕，而且被拒絕的原因必須是「看到了對方建立的 owner」，不是資料庫丟出別的錯。
+* commit、rollback、以及「拿到鎖之後中途崩潰」三種情況，鎖都必須釋放；崩潰那一項用另一條連線的 `pg_try_advisory_xact_lock` 直接驗證，而不是讀 `pg_locks` 猜編碼。
+* **對照組**：同樣的排程但拿掉鎖，必須產生兩位 owner。這條測試才是前面那條的意義來源——如果對照組哪天不再衝突，代表並行測試已經沒有在測任何東西，CI 會因此變紅。
+
+該 job 只連本機容器，測試本身也會拒絕任何非 localhost、或資料庫名稱不含 `test` 的連線字串（它會 TRUNCATE）。容器以 trust 認證啟動，因此沒有任何密碼需要保管。
+
+這項保證依賴 PostgreSQL 預設的 READ COMMITTED：在 REPEATABLE READ 之下，等到鎖的那一方看到的仍是舊快照，會拿著鎖再建立第二位 owner。`test_the_guard_depends_on_read_committed`把這個前提釘住，改動隔離等級會先在 CI 失敗，而不是在正式環境。
+
+### 建立之後
+
+在公開網站以該帳號登入即可驗證；後續帳號請改用 `POST /organizations/current/members`（會留下稽核紀錄）。
+
 ## 資料保護
 
 - 學生使用代號，不收集姓名、電話、地址、學校學號等不必要個資。

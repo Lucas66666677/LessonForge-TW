@@ -44,3 +44,45 @@ jobs:
         run: |
           npm audit --audit-level=high
           python -m pip_audit --local --skip-editable
+
+  # The first-owner bootstrap serialises with a PostgreSQL advisory lock, which
+  # SQLite has no equivalent for -- so the suite in `quality` can only check
+  # that the statement is issued, never that two simultaneous runs produce one
+  # owner. This job answers that against a real server in a throwaway container.
+  #
+  # Trust auth on purpose: the container is reachable only from this runner and
+  # dies with it, so there is no password to store, rotate or leak. The database
+  # name carries "test" because the harness refuses to truncate anything else.
+  first-owner-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: lessonforge_bootstrap_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip setuptools==83.0.0
+      - run: python -m pip install -e ".[dev]"
+      - name: First-owner bootstrap concurrency (real PostgreSQL)
+        env:
+          BOOTSTRAP_TEST_POSTGRES_URL: >-
+            postgresql+asyncpg://postgres@127.0.0.1:5432/lessonforge_bootstrap_test
+        run: |
+          # -vv, not -v: pyproject's addopts already carries -q, which cancels a
+          # single -v out and leaves the log showing dots. This job exists to be
+          # read as evidence, so each test is named in the output.
+          python -m pytest services/api/tests/test_first_owner_bootstrap_postgres.py -vv
