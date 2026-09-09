@@ -378,7 +378,7 @@ def test_no_credential_is_written_into_the_script() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Status: the three states it has to tell apart
+# Status: the states it has to tell apart
 # --------------------------------------------------------------------------- #
 
 
@@ -566,6 +566,63 @@ async def test_bootstrapping_beside_an_ownerless_organization_makes_a_separate_o
     assert still_ownerless is None
 
 
+async def test_a_deactivated_member_cannot_sign_in_and_is_not_reported_as_able_to(
+    client, db_session
+) -> None:
+    """The same overclaim, one step smaller, and it must not ship either.
+
+    `login` checks `is_active` and answers 401 before it ever looks for a
+    membership, so a membership held by a deactivated user lets nobody in.
+    Counting plain memberships and calling that "people CAN sign in" would be
+    exactly the error under review, in miniature.
+    """
+
+    organization = Organization(name="Existing Academy", slug="existing-academy")
+    user = User(
+        email="retired@example.com",
+        display_name="Retired",
+        password_hash=hash_password(OWNER_PASSWORD),
+        is_active=False,
+    )
+    db_session.add_all([organization, user])
+    await db_session.flush()
+    db_session.add(
+        Membership(organization_id=organization.id, user_id=user.id, role=Role.teacher.value)
+    )
+    await db_session.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "retired@example.com", "password": OWNER_PASSWORD},
+    )
+    assert response.status_code == 401, response.text
+
+    counts = await bootstrap.read_status(db_session)
+    assert counts["memberships"] == 1
+    assert counts["active_memberships"] == 0
+
+    described = bootstrap.describe_status(counts)
+    assert "deactivated" in described
+    assert "CAN sign in" not in described, (
+        "the report claimed people can sign in while login just refused the only member"
+    )
+
+
+async def test_an_active_membership_is_what_the_report_calls_a_sign_in(
+    client, db_session
+) -> None:
+    """Guards the guard above: the deactivated branch must not swallow the
+    ordinary case, where a member really can sign in."""
+
+    await _seed_ownerless_organization(db_session)
+
+    counts = await bootstrap.read_status(db_session)
+    assert counts["memberships"] == counts["active_memberships"] == 1
+    described = bootstrap.describe_status(counts)
+    assert "CAN sign in" in described
+    assert "deactivated" not in described
+
+
 # --------------------------------------------------------------------------- #
 # Two operators at once
 # --------------------------------------------------------------------------- #
@@ -735,60 +792,3 @@ def test_the_safe_path_is_the_default_and_the_opt_out_is_reachable() -> None:
     assert inspect.signature(bootstrap.hold_bootstrap_lock).parameters[
         "require_exclusive"
     ].default is True
-
-
-async def test_a_deactivated_member_cannot_sign_in_and_is_not_reported_as_able_to(
-    client, db_session
-) -> None:
-    """The same overclaim, one step smaller, and it must not ship either.
-
-    `login` checks `is_active` and answers 401 before it ever looks for a
-    membership, so a membership held by a deactivated user lets nobody in.
-    Counting plain memberships and calling that "people CAN sign in" would be
-    exactly the error under review, in miniature.
-    """
-
-    organization = Organization(name="Existing Academy", slug="existing-academy")
-    user = User(
-        email="retired@example.com",
-        display_name="Retired",
-        password_hash=hash_password(OWNER_PASSWORD),
-        is_active=False,
-    )
-    db_session.add_all([organization, user])
-    await db_session.flush()
-    db_session.add(
-        Membership(organization_id=organization.id, user_id=user.id, role=Role.teacher.value)
-    )
-    await db_session.commit()
-
-    response = client.post(
-        "/api/auth/login",
-        json={"email": "retired@example.com", "password": OWNER_PASSWORD},
-    )
-    assert response.status_code == 401, response.text
-
-    counts = await bootstrap.read_status(db_session)
-    assert counts["memberships"] == 1
-    assert counts["active_memberships"] == 0
-
-    described = bootstrap.describe_status(counts)
-    assert "deactivated" in described
-    assert "CAN sign in" not in described, (
-        "the report claimed people can sign in while login just refused the only member"
-    )
-
-
-async def test_an_active_membership_is_what_the_report_calls_a_sign_in(
-    client, db_session
-) -> None:
-    """Guards the guard above: the deactivated branch must not swallow the
-    ordinary case, where a member really can sign in."""
-
-    await _seed_ownerless_organization(db_session)
-
-    counts = await bootstrap.read_status(db_session)
-    assert counts["memberships"] == counts["active_memberships"] == 1
-    described = bootstrap.describe_status(counts)
-    assert "CAN sign in" in described
-    assert "deactivated" not in described
