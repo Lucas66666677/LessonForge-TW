@@ -222,13 +222,29 @@ def read_password(*, allow_prompt: bool) -> str:
 async def read_status(session) -> dict[str, int]:
     """Counts only. No email, display name or password hash is read.
 
-    `memberships` is counted apart from `owner_memberships` because they answer
-    different questions, and conflating them is the mistake this report used to
-    make: sign-in requires *a* membership, of any role.
+    Three membership counts rather than one, because they answer three
+    different questions and merging any two of them produces a false claim:
+
+    * `memberships` -- how many join a user to an organization at all.
+    * `active_memberships` -- how many belong to a user `login` would accept.
+      It checks `is_active` and answers 401 before it ever looks for a
+      membership, so a deactivated member cannot sign in however many
+      memberships they hold.
+    * `owner_memberships` -- how many hold the `owner` role, which is the only
+      thing `--create` refuses on.
+
+    Reporting the first as though it were the second is the same overclaim, one
+    step smaller, as reporting the third as though it were the second.
     """
     users = await session.scalar(select(func.count()).select_from(User))
     organizations = await session.scalar(select(func.count()).select_from(Organization))
     memberships = await session.scalar(select(func.count()).select_from(Membership))
+    active_memberships = await session.scalar(
+        select(func.count())
+        .select_from(Membership)
+        .join(User, User.id == Membership.user_id)
+        .where(User.is_active.is_(True))
+    )
     owners = await session.scalar(
         select(func.count()).select_from(Membership).where(Membership.role == Role.owner.value)
     )
@@ -236,6 +252,7 @@ async def read_status(session) -> dict[str, int]:
         "users": int(users or 0),
         "organizations": int(organizations or 0),
         "memberships": int(memberships or 0),
+        "active_memberships": int(active_memberships or 0),
         "owner_memberships": int(owners or 0),
     }
 
@@ -251,15 +268,20 @@ def describe_status(counts: dict[str, int]) -> str:
 
     Zero owners is a fact about the `owner` role and nothing more. It does not
     even mean nobody can add members: the only role-gated route,
-    `POST /organizations/current/members`, accepts owner *or* admin. The
-    question "can anyone sign in?" is answered by `memberships`, which is why
-    both are counted and reported.
+    `POST /organizations/current/members`, accepts owner *or* admin.
+
+    "Can anyone sign in?" is answered by `active_memberships`, and only by that
+    one. A membership held by a deactivated user does not let anybody in --
+    `login` checks `is_active` and answers 401 before it looks for a membership
+    at all -- so reporting plain `memberships` here would repeat the corrected
+    mistake in miniature.
     """
     lines = [
-        f"users:             {counts['users']}",
-        f"organizations:     {counts['organizations']}",
-        f"memberships:       {counts['memberships']}",
-        f"owner memberships: {counts['owner_memberships']}",
+        f"users:              {counts['users']}",
+        f"organizations:      {counts['organizations']}",
+        f"memberships:        {counts['memberships']}",
+        f"active memberships: {counts['active_memberships']}",
+        f"owner memberships:  {counts['owner_memberships']}",
         "",
     ]
     if counts["owner_memberships"]:
@@ -267,14 +289,22 @@ def describe_status(counts: dict[str, int]) -> str:
             "An owner already exists, so this deployment is past bootstrap. "
             "--create will refuse."
         )
-    elif counts["memberships"]:
+    elif counts["active_memberships"]:
         lines.append(
-            "No account holds the owner role, but memberships exist, so people "
-            "CAN sign in: login accepts a membership of any role. An admin, if "
-            "there is one, can already add members. --create still runs here -- "
+            "No account holds the owner role, but active memberships exist, so "
+            "people CAN sign in: login accepts a membership of any role. An admin, "
+            "if there is one, can already add members. --create still runs here -- "
             "it refuses only when an owner exists -- but it creates a SEPARATE "
             "organization and owns only that one; the existing organizations stay "
             "ownerless."
+        )
+    elif counts["memberships"]:
+        lines.append(
+            "Memberships exist, but every one of them belongs to a deactivated "
+            "user, so none can sign in: login rejects an inactive account before "
+            "it looks for a membership. Reactivating one is likely the smaller "
+            "change; --create would create a SEPARATE organization and would not "
+            "grant ownership of the existing one."
         )
     elif counts["users"]:
         lines.append(

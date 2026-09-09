@@ -101,22 +101,37 @@ python scripts/bootstrap_owner.py --status
 它只回報數量，不輸出 email、顯示名稱或雜湊，因此輸出可以安全貼進 issue：
 
 ```text
-users:             0
-organizations:     0
-memberships:       0
-owner memberships: 0
+users:              0
+organizations:      0
+memberships:        0
+active memberships: 0
+owner memberships:  0
 
 The database holds no accounts. --create will create the first owner.
 ```
 
-輸出區分四種狀態，而 `memberships` 與 `owner memberships` 回答的是**兩個不同的問題**：
+三個 membership 數字回答的是**三個不同的問題**，任意兩個混為一談都會得出錯誤結論：
+
+* `memberships`——有多少筆把 user 連到組織。
+* `active memberships`——其中有多少筆屬於 `login` 會接受的 user。登入會先檢查 `is_active`，在還沒去找 membership 之前就回 401，所以停用帳號持有再多 membership 也登不進來。
+* `owner memberships`——有多少筆是 owner 角色；這是 `--create` 唯一會據以拒絕的數字。
+
+因此輸出區分五種狀態：
 
 * **沒有任何帳號**——`--create` 會建立第一位擁有者。
 * **有 user 但沒有任何 membership**——這些帳號存在卻無法登入，因為登入需要 membership。
-* **有 membership 但沒有 owner**——這些人**可以**正常登入。`POST /auth/login` 以 `user_id` join `Membership`，完全不篩選 `role`，因此 teacher 與 owner 一樣能登入；唯一有角色限制的路由 `POST /organizations/current/members` 也接受 admin。此時 `--create` 仍會執行，但它建立的是**另一個**組織，既有組織依然沒有 owner。
+* **有 active membership 但沒有 owner**——這些人**可以**正常登入。`POST /auth/login` 以 `user_id` join `Membership`，完全不篩選 `role`，因此 teacher 與 owner 一樣能登入；唯一有角色限制的路由 `POST /organizations/current/members` 也接受 admin。此時 `--create` 仍會執行，但它建立的是**另一個**組織，既有組織依然沒有 owner。
+* **有 membership，但持有者全部被停用**——沒有人能登入，原因是停用而不是缺少 owner。此時「把某個帳號重新啟用」通常比新建組織更小、更正確。
 * **已有 owner**——此時 `--create` 會拒絕。
 
-早期版本把「owner 為 0」寫成「沒有人能登入」，那是錯的，並在外部審查中被指出：owner 的數量只說明 owner 這個角色，不說明誰能登入。能不能登入由 `memberships` 回答，這正是兩個數字都必須列出的原因。回歸測試：`test_a_teacher_membership_is_enough_to_sign_in` 會實際以 teacher 身分呼叫公開登入路由取得 token。
+早期版本把「owner 為 0」寫成「沒有人能登入」，那是錯的，並在外部審查中被指出：owner 的數量只說明 owner 這個角色，不說明誰能登入。能不能登入只由 `active memberships` 回答。
+
+回歸測試有兩個，因為那是同一類誤判的兩種大小：
+
+* `test_a_teacher_membership_is_enough_to_sign_in`——在沒有任何 owner 的資料庫中，以 teacher 身分呼叫公開登入路由並取得 token。
+* `test_a_deactivated_member_cannot_sign_in_and_is_not_reported_as_able_to`——membership 存在但持有者已停用時登入回 401，報告也不得宣稱有人能登入。
+
+兩者都經過變異驗證：在 `login` 加上角色篩選、或讓報告改用未過濾的 `memberships`，對應的測試都會失敗。
 
 ### 建立
 
