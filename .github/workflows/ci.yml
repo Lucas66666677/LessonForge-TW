@@ -81,4 +81,8 @@ jobs:
         env:
           BOOTSTRAP_TEST_POSTGRES_URL: >-
             postgresql+asyncpg://postgres@127.0.0.1:5432/lessonforge_bootstrap_test
-        run: python -m pytest services/api/tests/test_first_owner_bootstrap_postgres.py -v
+        run: |
+          # -vv, not -v: pyproject's addopts already carries -q, which cancels a
+          # single -v out and leaves the log showing dots. This job exists to be
+          # read as evidence, so each test is named in the output.
+          python -m pytest services/api/tests/test_first_owner_bootstrap_postgres.py -vv
