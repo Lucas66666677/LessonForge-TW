@@ -165,6 +165,18 @@ if you are certain nothing else is writing.
 
 正式環境使用 PostgreSQL，因此預設路徑即可運作，不需要任何額外參數。只有在確定沒有其他寫入者（例如對本機 SQLite 操作）時，才用 `--allow-unsynchronized` 明示放棄這項保護。
 
+#### 這個保證是怎麼驗證的
+
+SQLite 沒有 advisory lock，所以一般測試只能確認「有送出那道語句」，無法證明「兩個同時執行的結果只會有一位 owner」。CI 另有 `first-owner-concurrency` job，會啟動一個用完即丟的 PostgreSQL 容器，實際跑真正的並行情境：
+
+* 兩個 bootstrap 在 barrier 同時出發，結果必須恰好是一個成功、一個被拒絕，而且被拒絕的原因必須是「看到了對方建立的 owner」，不是資料庫丟出別的錯。
+* commit、rollback、以及「拿到鎖之後中途崩潰」三種情況，鎖都必須釋放；崩潰那一項用另一條連線的 `pg_try_advisory_xact_lock` 直接驗證，而不是讀 `pg_locks` 猜編碼。
+* **對照組**：同樣的排程但拿掉鎖，必須產生兩位 owner。這條測試才是前面那條的意義來源——如果對照組哪天不再衝突，代表並行測試已經沒有在測任何東西，CI 會因此變紅。
+
+該 job 只連本機容器，測試本身也會拒絕任何非 localhost、或資料庫名稱不含 `test` 的連線字串（它會 TRUNCATE）。容器以 trust 認證啟動，因此沒有任何密碼需要保管。
+
+這項保證依賴 PostgreSQL 預設的 READ COMMITTED：在 REPEATABLE READ 之下，等到鎖的那一方看到的仍是舊快照，會拿著鎖再建立第二位 owner。`test_the_guard_depends_on_read_committed`把這個前提釘住，改動隔離等級會先在 CI 失敗，而不是在正式環境。
+
 ### 建立之後
 
 在公開網站以該帳號登入即可驗證；後續帳號請改用 `POST /organizations/current/members`（會留下稽核紀錄）。
