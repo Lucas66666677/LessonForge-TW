@@ -21,6 +21,15 @@ a live database that no test and no amount of source reading can establish, so
 the script reports it instead of asserting it -- and the checks below pin the
 three states it distinguishes.
 
+## What "no owner" does not mean
+
+An earlier version of the status report said that zero owner memberships meant
+nobody could sign in. Independent review caught it, and it was wrong: `login`
+joins `Membership` on `user_id` with no filter on `role`, so a teacher signs in
+exactly as an owner does. `test_a_teacher_membership_is_enough_to_sign_in`
+proves that through the public route, which is what keeps the corrected wording
+honest.
+
 Everything runs against the test database the suite already uses. No network,
 no production, no credential: passwords in this file are local fixtures typed
 into a throwaway SQLite file.
@@ -28,8 +37,12 @@ into a throwaway SQLite file.
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import importlib.util
+import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -134,6 +147,7 @@ async def test_it_creates_a_user_an_organization_and_an_owner_membership(db_sess
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
 
     user = await db_session.scalar(select(User).where(User.id == created["user_id"]))
@@ -165,6 +179,7 @@ async def test_the_bootstrapped_owner_can_actually_sign_in(client, db_session) -
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
 
     response = client.post(
@@ -185,6 +200,7 @@ async def test_the_password_is_stored_only_as_a_hash(db_session) -> None:
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
     user = await db_session.scalar(select(User).where(User.id == created["user_id"]))
 
@@ -206,6 +222,7 @@ async def test_it_refuses_when_an_owner_already_exists(db_session) -> None:
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
 
     with pytest.raises(bootstrap.BootstrapError, match="already exists"):
@@ -215,6 +232,7 @@ async def test_it_refuses_when_an_owner_already_exists(db_session) -> None:
             display_name="Second",
             organization_name="Another Academy",
             password=OWNER_PASSWORD,
+            require_exclusive=False,
         )
 
 
@@ -242,6 +260,7 @@ async def test_it_refuses_an_email_that_already_has_a_user(db_session) -> None:
             display_name="Taken",
             organization_name="Bootstrap Academy",
             password=OWNER_PASSWORD,
+            require_exclusive=False,
         )
 
 
@@ -365,15 +384,22 @@ def test_no_credential_is_written_into_the_script() -> None:
 
 async def test_status_reports_an_empty_database(db_session) -> None:
     counts = await bootstrap.read_status(db_session)
-    assert counts == {"users": 0, "organizations": 0, "owner_memberships": 0}
+    assert counts == {
+        "users": 0,
+        "organizations": 0,
+        "memberships": 0,
+        "owner_memberships": 0,
+    }
     assert "no accounts" in bootstrap.describe_status(counts)
 
 
-async def test_status_distinguishes_users_without_an_owner(db_session) -> None:
+async def test_status_distinguishes_users_without_a_membership(db_session) -> None:
     """The state a naive check would call "an account exists" and stop.
 
-    It does exist, and it cannot sign in. Reporting that difference is the
-    whole reason this mode is separate from the create path.
+    It does exist, and it cannot sign in -- but the reason is the missing
+    *membership*, not the missing owner role. Those came apart under review:
+    a teacher membership signs in perfectly well, so only a zero membership
+    count supports the claim that nobody can get in.
     """
 
     db_session.add(
@@ -387,9 +413,10 @@ async def test_status_distinguishes_users_without_an_owner(db_session) -> None:
 
     counts = await bootstrap.read_status(db_session)
     assert counts["users"] == 1
+    assert counts["memberships"] == 0
     assert counts["owner_memberships"] == 0
     described = bootstrap.describe_status(counts)
-    assert "none owns an organization" in described
+    assert "none of them can sign in" in described
 
 
 async def test_status_reports_an_existing_owner(db_session) -> None:
@@ -399,6 +426,7 @@ async def test_status_reports_an_existing_owner(db_session) -> None:
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
 
     counts = await bootstrap.read_status(db_session)
@@ -419,10 +447,282 @@ async def test_status_reports_counts_and_no_account_content(db_session) -> None:
         display_name="First Owner",
         organization_name="Bootstrap Academy",
         password=OWNER_PASSWORD,
+        require_exclusive=False,
     )
 
     counts = await bootstrap.read_status(db_session)
     described = bootstrap.describe_status(counts)
-    assert set(counts) == {"users", "organizations", "owner_memberships"}
+    assert set(counts) == {"users", "organizations", "memberships", "owner_memberships"}
     for leaked in ("owner@example.com", "First Owner", "Bootstrap Academy", OWNER_PASSWORD):
         assert leaked not in described
+
+
+# --------------------------------------------------------------------------- #
+# Zero owners is not zero sign-ins
+# --------------------------------------------------------------------------- #
+
+
+async def _seed_ownerless_organization(db_session):
+    """An organization whose only member is a teacher. No owner anywhere."""
+
+    organization = Organization(name="Existing Academy", slug="existing-academy")
+    user = User(
+        email="teacher@example.com",
+        display_name="Teacher",
+        password_hash=hash_password(OWNER_PASSWORD),
+    )
+    db_session.add_all([organization, user])
+    await db_session.flush()
+    db_session.add(
+        Membership(organization_id=organization.id, user_id=user.id, role=Role.teacher.value)
+    )
+    await db_session.commit()
+    return organization
+
+
+async def test_a_teacher_membership_is_enough_to_sign_in(client, db_session) -> None:
+    """The regression for the claim review rejected.
+
+    `login` joins `Membership` on `user_id` and never looks at `role`, so the
+    owner count says nothing about who can sign in. This proves it through the
+    public route rather than by reading the query: a teacher, with no owner
+    anywhere in the database, gets a token.
+    """
+
+    await _seed_ownerless_organization(db_session)
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "teacher@example.com", "password": OWNER_PASSWORD},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["role"] == "teacher"
+
+    counts = await bootstrap.read_status(db_session)
+    assert counts["owner_memberships"] == 0
+    assert counts["memberships"] == 1
+
+    described = bootstrap.describe_status(counts)
+    assert "CAN sign in" in described
+    assert (
+        "none of them can sign in" not in described
+    ), "the report claimed nobody can sign in while a teacher just did"
+
+
+async def test_status_separates_who_can_sign_in_from_who_owns(db_session) -> None:
+    """The two counts answer two questions, and the report must not merge them.
+
+    Reading only `owner_memberships` is what produced the wrong wording; the
+    membership count is what actually answers "can anyone get in?".
+    """
+
+    await _seed_ownerless_organization(db_session)
+
+    assert await bootstrap.read_status(db_session) == {
+        "users": 1,
+        "organizations": 1,
+        "memberships": 1,
+        "owner_memberships": 0,
+    }
+
+
+async def test_bootstrapping_beside_an_ownerless_organization_makes_a_separate_one(
+    db_session,
+) -> None:
+    """What `--create` does in that state, checked rather than described.
+
+    The status text says it creates a separate organization and leaves the
+    existing one ownerless. That is a claim about behaviour, so it is pinned
+    here: the first draft of that wording said the script would *refuse*, which
+    it does not -- it only ever counts owners.
+    """
+
+    existing = await _seed_ownerless_organization(db_session)
+
+    created = await bootstrap.create_first_owner(
+        db_session,
+        email="owner@example.com",
+        display_name="First Owner",
+        organization_name="Bootstrap Academy",
+        password=OWNER_PASSWORD,
+        require_exclusive=False,
+    )
+
+    assert created["organization_id"] != existing.id
+    still_ownerless = await db_session.scalar(
+        select(Membership).where(
+            Membership.organization_id == existing.id,
+            Membership.role == Role.owner.value,
+        )
+    )
+    assert still_ownerless is None
+
+
+# --------------------------------------------------------------------------- #
+# Two operators at once
+# --------------------------------------------------------------------------- #
+
+
+class _RecordingSession:
+    """A stand-in that records the order of calls. Not a database.
+
+    Every query answers "no rows", which is the state a first bootstrap runs
+    in, and nothing is written anywhere. It exists for the one property a real
+    session cannot show on SQLite: which statement is issued first.
+    """
+
+    def __init__(self, dialect: str) -> None:
+        self._dialect = dialect
+        self.calls: list[str] = []
+
+    def get_bind(self):
+        return SimpleNamespace(dialect=SimpleNamespace(name=self._dialect))
+
+    async def execute(self, statement, params=None):
+        self.calls.append(f"execute {statement} {params}")
+        return None
+
+    async def scalar(self, statement):
+        self.calls.append(f"scalar {statement}")
+        return None
+
+    def add(self, instance) -> None:
+        self.calls.append(f"add {type(instance).__name__}")
+
+    async def flush(self) -> None:
+        self.calls.append("flush")
+
+    async def commit(self) -> None:
+        self.calls.append("commit")
+
+
+def _first_index(calls: list[str], needle: str) -> int:
+    for index, call in enumerate(calls):
+        if needle in call:
+            return index
+    raise AssertionError(f"{needle!r} never appeared in {calls!r}")
+
+
+async def test_it_takes_a_transaction_scoped_advisory_lock_on_postgresql() -> None:
+    """`_xact_` is the part that matters.
+
+    A session-scoped lock would outlive the transaction, so a crashed run could
+    leave it held and block every later bootstrap until the connection died.
+    """
+
+    session = _RecordingSession("postgresql")
+    assert await bootstrap.hold_bootstrap_lock(session) is True
+
+    assert len(session.calls) == 1
+    (statement,) = session.calls
+    assert "pg_advisory_xact_lock" in statement
+    assert str(bootstrap.BOOTSTRAP_LOCK_KEY) in statement
+
+
+async def test_the_lock_is_taken_before_the_owner_count_is_read() -> None:
+    """The ordering is the whole guard.
+
+    Counting first and locking second reads as equally safe and is not: both
+    runs would already hold the answer "zero owners" before either one waited.
+    """
+
+    session = _RecordingSession("postgresql")
+    await bootstrap.create_first_owner(
+        session,
+        email="owner@example.com",
+        display_name="First Owner",
+        organization_name="Bootstrap Academy",
+        password=OWNER_PASSWORD,
+    )
+
+    lock = _first_index(session.calls, "pg_advisory_xact_lock")
+    count = _first_index(session.calls, "count(*)")
+    write = _first_index(session.calls, "add ")
+    assert lock < count < write, session.calls
+
+
+async def test_it_fails_closed_where_it_cannot_serialise() -> None:
+    """Proceeding silently would be a race; a comment claiming protection that
+    is not there is worse than a refusal that says so."""
+
+    session = _RecordingSession("sqlite")
+    with pytest.raises(bootstrap.BootstrapError, match="PostgreSQL"):
+        await bootstrap.hold_bootstrap_lock(session)
+    assert session.calls == [], "it must refuse before touching the database"
+
+
+async def test_the_opt_out_is_explicit_and_reports_that_no_lock_is_held() -> None:
+    """Guards the guard above, and pins the return value.
+
+    Returning True here would let a caller believe a lock exists when none
+    does, which is the failure this whole path removes.
+    """
+
+    session = _RecordingSession("sqlite")
+    assert await bootstrap.hold_bootstrap_lock(session, require_exclusive=False) is False
+    assert session.calls == []
+
+
+async def test_create_refuses_before_writing_anything_on_an_unserialisable_database(
+    db_session,
+) -> None:
+    """The refusal is the default, and it lands before the first row."""
+
+    with pytest.raises(bootstrap.BootstrapError, match="PostgreSQL"):
+        await bootstrap.create_first_owner(
+            db_session,
+            email="owner@example.com",
+            display_name="First Owner",
+            organization_name="Bootstrap Academy",
+            password=OWNER_PASSWORD,
+        )
+
+    assert await bootstrap.read_status(db_session) == {
+        "users": 0,
+        "organizations": 0,
+        "memberships": 0,
+        "owner_memberships": 0,
+    }
+
+
+def test_the_lock_key_is_reproducible_from_its_namespace() -> None:
+    """A per-process value would hand two concurrent runs two different locks.
+
+    That is why the key is a blake2b digest of a fixed name rather than
+    `hash()`, whose randomisation would defeat the guard silently: every run
+    would take a lock, and no run would ever wait.
+    """
+
+    expected = int.from_bytes(
+        hashlib.blake2b(b"lessonforge.bootstrap_owner.first_owner", digest_size=8).digest(),
+        "big",
+        signed=True,
+    )
+    assert bootstrap.BOOTSTRAP_LOCK_KEY == expected
+    assert -(2**63) <= bootstrap.BOOTSTRAP_LOCK_KEY < 2**63, "pg takes a signed bigint"
+
+    # Parsed, not grepped: the first version of this check matched the comment
+    # that explains why `hash()` is not used, and failed on prose.
+    tree = ast.parse((REPO_ROOT / "scripts" / "bootstrap_owner.py").read_text(encoding="utf-8"))
+    called = {
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "hash" not in called, "randomised per process; use blake2b"
+
+
+def test_the_safe_path_is_the_default_and_the_opt_out_is_reachable() -> None:
+    """A guard nobody can turn off gets deleted; one that is off by default is
+    not a guard. Both halves are pinned."""
+
+    source = (REPO_ROOT / "scripts" / "bootstrap_owner.py").read_text(encoding="utf-8")
+    assert "--allow-unsynchronized" in source
+    assert "require_exclusive=not args.allow_unsynchronized" in source
+
+    assert inspect.signature(bootstrap.create_first_owner).parameters[
+        "require_exclusive"
+    ].default is True
+    assert inspect.signature(bootstrap.hold_bootstrap_lock).parameters[
+        "require_exclusive"
+    ].default is True

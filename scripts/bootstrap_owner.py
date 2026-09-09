@@ -36,6 +36,20 @@ answered instead of assumed.
 ``--create`` refuses when any owner membership already exists, so it cannot
 quietly mint a second owner beside one that was provisioned another way.
 
+## Two operators at once
+
+``--create`` checks that no owner exists and then writes three rows. Between
+those two steps a second run can make the same check, get the same answer, and
+also write -- two owners of two organizations, from a command whose entire
+contract is that it creates the first one. On PostgreSQL that window is closed
+with ``pg_advisory_xact_lock``, held for the transaction that spans the check
+and the writes: the second run waits, then sees the owner the first one created
+and refuses. It needs no table and no migration.
+
+Nothing equivalent is guaranteed on other dialects, so there this script refuses
+rather than pretending. ``--allow-unsynchronized`` is the deliberate opt-out for
+an operator who knows they are the only writer.
+
 ## What it will not do
 
 It never invents a credential. The password comes from
@@ -50,6 +64,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import hashlib
 import importlib.util
 import os
 import sys
@@ -57,7 +72,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "api"))
 
-from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy import func, select, text  # noqa: E402
 
 from lessonforge.config import get_settings  # noqa: E402
 from lessonforge.database import SessionLocal  # noqa: E402
@@ -97,6 +112,55 @@ MINIMUM_PASSWORD_LENGTH = 12
 
 class BootstrapError(RuntimeError):
     """A refusal the operator has to act on, not a traceback to decode."""
+
+
+#: Namespace for the PostgreSQL advisory lock. Derived rather than picked so the
+#: number is reproducible from a name, and hashed with blake2b rather than
+#: `hash()`, which is randomised per process and would hand two concurrent runs
+#: two different locks -- the exact failure this is meant to prevent.
+BOOTSTRAP_LOCK_NAMESPACE = "lessonforge.bootstrap_owner.first_owner"
+
+#: `pg_advisory_xact_lock` takes a signed 64-bit key, so the digest is read as one.
+BOOTSTRAP_LOCK_KEY = int.from_bytes(
+    hashlib.blake2b(BOOTSTRAP_LOCK_NAMESPACE.encode("utf-8"), digest_size=8).digest(),
+    "big",
+    signed=True,
+)
+
+
+async def hold_bootstrap_lock(session, *, require_exclusive: bool = True) -> bool:
+    """Serialise this run against another one, or refuse to guess.
+
+    Returns True only when a lock is genuinely held for the remainder of the
+    transaction -- never as a way of reporting that none was needed.
+
+    The lock is transaction-scoped, so it covers the whole check-then-write and
+    is released by the commit. That is why no table and no migration are
+    involved, and why it cannot be left behind by a crashed run.
+
+    On any other dialect there is no equivalent to reach for, and the honest
+    answer is a refusal rather than a comment claiming protection that is not
+    there. SQLite is the suite's database, so the tests pass
+    ``require_exclusive=False`` explicitly: opting out is visible at the call
+    site instead of being the default everywhere.
+    """
+
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:key)"), {"key": BOOTSTRAP_LOCK_KEY}
+        )
+        return True
+    if require_exclusive:
+        raise BootstrapError(
+            f"Refusing to bootstrap on a {dialect!r} database. Only one owner may "
+            f"ever be created this way, and only PostgreSQL offers a lock that can "
+            f"hold across the check and the writes; here two simultaneous runs "
+            f"would both read zero owners and both succeed. Run this against the "
+            f"PostgreSQL deployment, or pass --allow-unsynchronized if you are "
+            f"certain nothing else is writing."
+        )
+    return False
 
 
 def slugify(name: str) -> str:
@@ -156,32 +220,66 @@ def read_password(*, allow_prompt: bool) -> str:
 
 
 async def read_status(session) -> dict[str, int]:
-    """Counts only. No email, display name or password hash is read."""
+    """Counts only. No email, display name or password hash is read.
+
+    `memberships` is counted apart from `owner_memberships` because they answer
+    different questions, and conflating them is the mistake this report used to
+    make: sign-in requires *a* membership, of any role.
+    """
     users = await session.scalar(select(func.count()).select_from(User))
     organizations = await session.scalar(select(func.count()).select_from(Organization))
+    memberships = await session.scalar(select(func.count()).select_from(Membership))
     owners = await session.scalar(
         select(func.count()).select_from(Membership).where(Membership.role == Role.owner.value)
     )
     return {
         "users": int(users or 0),
         "organizations": int(organizations or 0),
+        "memberships": int(memberships or 0),
         "owner_memberships": int(owners or 0),
     }
 
 
 def describe_status(counts: dict[str, int]) -> str:
+    """What the counts do, and do not, establish.
+
+    An earlier version said that zero owner memberships meant nobody could sign
+    in. That was wrong, and independent review caught it. `POST /auth/login`
+    joins `Membership` on `user_id` with **no role filter**, so a teacher or an
+    admin signs in exactly as an owner does -- `test_first_owner_bootstrap.py`
+    now proves that by logging in with a teacher membership.
+
+    Zero owners is a fact about the `owner` role and nothing more. It does not
+    even mean nobody can add members: the only role-gated route,
+    `POST /organizations/current/members`, accepts owner *or* admin. The
+    question "can anyone sign in?" is answered by `memberships`, which is why
+    both are counted and reported.
+    """
     lines = [
         f"users:             {counts['users']}",
         f"organizations:     {counts['organizations']}",
+        f"memberships:       {counts['memberships']}",
         f"owner memberships: {counts['owner_memberships']}",
         "",
     ]
     if counts["owner_memberships"]:
-        lines.append("An owner already exists. --create would refuse; nothing to bootstrap.")
+        lines.append(
+            "An owner already exists, so this deployment is past bootstrap. "
+            "--create will refuse."
+        )
+    elif counts["memberships"]:
+        lines.append(
+            "No account holds the owner role, but memberships exist, so people "
+            "CAN sign in: login accepts a membership of any role. An admin, if "
+            "there is one, can already add members. --create still runs here -- "
+            "it refuses only when an owner exists -- but it creates a SEPARATE "
+            "organization and owns only that one; the existing organizations stay "
+            "ownerless."
+        )
     elif counts["users"]:
         lines.append(
-            "Users exist but none owns an organization, so none of them can sign in: "
-            "login requires a membership. --create will add an owner."
+            "Users exist and none has a membership, so none of them can sign in: "
+            "login requires one. --create will create the first owner."
         )
     else:
         lines.append("The database holds no accounts. --create will create the first owner.")
@@ -189,8 +287,25 @@ def describe_status(counts: dict[str, int]) -> str:
 
 
 async def create_first_owner(
-    session, *, email: str, display_name: str, organization_name: str, password: str
+    session,
+    *,
+    email: str,
+    display_name: str,
+    organization_name: str,
+    password: str,
+    require_exclusive: bool = True,
 ) -> dict[str, str]:
+    """Create the one first owner, and nothing if one is already there.
+
+    The lock is taken *before* the count is read. The other order looks
+    equivalent and is not: reading first and locking afterwards leaves open
+    precisely the window the lock exists to close, because both runs would have
+    already read zero. ``test_the_lock_is_taken_before_the_owner_count_is_read``
+    pins the ordering rather than trusting this paragraph.
+    """
+
+    await hold_bootstrap_lock(session, require_exclusive=require_exclusive)
+
     existing_owner = await session.scalar(
         select(func.count()).select_from(Membership).where(Membership.role == Role.owner.value)
     )
@@ -245,6 +360,14 @@ async def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="ask for the password at a terminal instead of reading the environment",
     )
+    parser.add_argument(
+        "--allow-unsynchronized",
+        action="store_true",
+        help=(
+            "proceed on a database where two simultaneous runs cannot be serialised; "
+            "only when you are certain nothing else is writing"
+        ),
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -264,6 +387,7 @@ async def main(argv: list[str] | None = None) -> int:
             display_name=args.display_name or args.email.split("@")[0],
             organization_name=args.organization,
             password=password,
+            require_exclusive=not args.allow_unsynchronized,
         )
 
     print("First owner created.")
